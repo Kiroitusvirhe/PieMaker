@@ -1,22 +1,40 @@
 #include <iostream>
-#include <windows.h>   // For Windows console functions (GetAsyncKeyState, Sleep)
-#include <cmath>       // For sqrt (prestige calculation)
-#include <fstream>     // For file saving/loading
-#include <string>      // For string handling in save files
+#include <windows.h>
+#include <cmath>
+#include <fstream>
+#include <chrono> // For precise timing
 
-// =============================================
-// GAME STATE - All variables tracking progress
-// =============================================
-int totalPies = 0;         // Total pies baked
-int piesPerSecond = 0;     // Pies generated automatically per second
+// ========================
+// Game State
+// ========================
+int totalPies = 0;
+int piesPerSecond = 0;
+int grandmas = 0, bakeries = 0, factories = 0;
+float prestigeStars = 0;
+bool gameLoaded = false; // Keep this for save/load
 
-// Buildings (each has count and production rate)
-int grandmas = 0;          // +1 pie/sec each
-int bakeries = 0;          // +5 pies/sec each
-int factories = 0;         // +20 pies/sec each
+// ========================
+// Timing Variables
+// ========================
+const int TICKS_PER_SECOND = 10; // How often game logic updates
+const float MS_PER_TICK = 1000.0f / TICKS_PER_SECOND;
 
-float prestigeStars = 0;   // Earned by resetting
-bool gameLoaded = false;   // Track if save data was loaded
+// ========================
+// Input Buffering
+// ========================
+bool keyPressed(char key) {
+    // Returns TRUE only on NEW key press (not held down)
+    static bool keyStates[256] = { false };
+    bool currentState = (GetAsyncKeyState(key) & 0x8000);
+
+    if (currentState && !keyStates[key]) {
+        keyStates[key] = true;
+        return true;
+    } else if (!currentState) {
+        keyStates[key] = false;
+    }
+    return false;
+}
 
 // =============================================
 // FUNCTION DECLARATIONS
@@ -29,55 +47,41 @@ void saveGame();
 void loadGame();
 void renderGame();
 
-// =============================================
-// MAIN GAME LOOP
-// =============================================
+// ========================
+// Game Loop (Optimized)
+// ========================
 int main() {
-    loadGame(); // Attempt to load saved data on startup
+    loadGame();
 
-    // Main game loop (runs every frame)
+    auto lastTime = std::chrono::steady_clock::now();
+    float accumulatedTime = 0.0f;
+
     while (true) {
-        renderGame(); // Draw the UI
+        auto currentTime = std::chrono::steady_clock::now();
+        float elapsedTime = std::chrono::duration<float>(currentTime - lastTime).count() * 1000.0f;
+        lastTime = currentTime;
+        accumulatedTime += elapsedTime;
 
-        // ===== INPUT HANDLING =====
-        // Press SPACE to click (bake a pie)
-        if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
-            totalPies++;
-            // Small delay to prevent ultra-fast clicks
-            Sleep(50);
+        // ===== INPUT HANDLING (No delay!) =====
+        if (keyPressed(VK_SPACE)) totalPies++; // Click
+        if (keyPressed('G')) buyGrandma();
+        if (keyPressed('B')) buyBakery();
+        if (keyPressed('F')) buyFactory();
+        if (totalPies >= 1000 && keyPressed('R')) resetForPrestige();
+
+        // ===== FIXED UPDATE (Game logic at consistent rate) =====
+        while (accumulatedTime >= MS_PER_TICK) {
+            // Auto-production (scaled per tick)
+            totalPies += (piesPerSecond / TICKS_PER_SECOND);
+            accumulatedTime -= MS_PER_TICK;
         }
 
-        // Press G to buy Grandma
-        if (GetAsyncKeyState('G') & 0x8000) {
-            buyGrandma();
-            Sleep(200); // Prevent rapid key presses
-        }
+        // ===== RENDER (As fast as possible) =====
+        renderGame();
 
-        // Press B to buy Bakery
-        if (GetAsyncKeyState('B') & 0x8000) {
-            buyBakery();
-            Sleep(200);
-        }
-
-        // Press F to buy Factory
-        if (GetAsyncKeyState('F') & 0x8000) {
-            buyFactory();
-            Sleep(200);
-        }
-
-        // Press R to reset for Prestige (if eligible)
-        if (totalPies >= 1000 && (GetAsyncKeyState('R') & 0x8000)) {
-            resetForPrestige();
-            Sleep(500); // Longer delay for important action
-        }
-
-        // ===== IDLE PRODUCTION =====
-        // Add auto-generated pies every second
-        totalPies += piesPerSecond;
-        Sleep(1000); // Wait 1 second between ticks
+        // Small sleep to prevent CPU overuse
+        Sleep(1);
     }
-
-    return 0;
 }
 
 // =============================================
