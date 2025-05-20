@@ -28,14 +28,11 @@ int piesBakedThisRun = 0;
 // ========================
 int totalRats = 0;
 int ratsEating = 0;
-float ratSpawnTimer = 0.0f;
+float ratsEatingSingle = 0.0f; // <-- Add this line
 
 const int RAT_THRESHOLD = 50000;         // Rats appear at 50,000 pies
-const float RAT_SPAWN_INTERVAL = 2.0f;   // Check for new rats every 2 seconds
-const int BASE_RAT_MAX = 200;            // Base maximum rats
-const float RAT_EAT_RATE = 2.0f;         // Each rat eats 2 pies per second
-const int RAT_SURGE_CHANCE = 2;          // 1% chance for a rat surge each spawn
-const int ENDGAME_THRESHOLD = 800000;    // Extra aggressive after 800,000 pies
+const float RAT_EAT_RATE = 1.0f;         // Each rat eats at least 1 pie per second (will scale up)
+const int RAT_MAX = 999999;              // Optional: hard cap for rats
 
 // Visibility tracking
 bool grandmasVisible = false;
@@ -65,31 +62,31 @@ std::vector<Upgrade> upgrades;
 // ========================
 // ASCII ART
 // ========================
-std::vector<std::string> pieIdle1 = {
-    "   ~     ~    ",
-    "  ~   ~   ~   ",
-    "   .-''''''-. ",
-    "  /          \\",
-    " |  ~~~ ~~ ~~ |",
-    "  \\__________/ "
+
+// Animated steam sprites (two frames)
+std::vector<std::string> pieSteam1 = {
+    "             (",
+    "              )"
+};
+std::vector<std::string> pieSteam2 = {
+    "            ~(",
+    "           ~ )"
 };
 
-std::vector<std::string> pieIdle2 = {
-    "     ~   ~    ",
-    "  ~     ~   ~ ",
-    "   .-''''''-. ",
-    "  /          \\",
-    " |  ~~~ ~~ ~~ |",
-    "  \\__________/ "
+// Pie sprite (no steam, no artist tag)
+std::vector<std::string> pieIdle1 = {
+    "         __..---..__",
+    "     ,-='  /  |  \\  `=-.",
+    "    :--..___________..--;",
+    "     \\.,_____________,./"
 };
+std::vector<std::string> pieIdle2 = pieIdle1; // No animation for pie itself
 
 std::vector<std::string> piePressed = {
-    "   \\  ^  ^  / ",
-    "    \\ ^  ^ /  ",
-    "   .-''''''-. ",
-    "  /   O  O   \\",
-    " |    ===     |",
-    "  \\__________/ "
+    "         __..---..__",
+    "     ,-='  /  |  \\  `=-.",
+    "    :--..___________..--;",
+    "     \\.,_O_O_O_O_O___,./"
 };
 
 std::vector<std::string> celebrationPie = {
@@ -135,9 +132,10 @@ int idleFrame = 0;
 float idleTimer = 0.0f;
 
 std::vector<std::string> ratArt = {
-    "    ____()()   ",
-    "   /      @@   ",
-    "  `~~~~~\\_;m__m._>o "
+    "                   .---.",
+    "              (\\./)     \\.......-",
+    "              >' '<  (__.'\"\"\"\"BP",
+    "              \" ` \" \""
 };
 
 // ========================
@@ -394,10 +392,24 @@ void renderFrame(float deltaTime) {
     frame += padLine("=== PIE MAKER IDLE ===") + "\n";
     frame += padLine("Goal: Bake 1,000,000 pies!") + "\n";
     frame += padLine("Pies: " + formatWithCommas(totalPies)) + "\n";
-    frame += padLine("Per second: " + std::to_string(piesPerSecond)) + "\n";
+
+    // Show rat eating effect on per second line if rats are present
+    if (totalRats > 0) {
+        frame += padLine("Per second: " + std::to_string(piesPerSecond) +
+            " (-" + std::to_string(ratsEating) + ")") + "\n";
+    } else {
+        frame += padLine("Per second: " + std::to_string(piesPerSecond)) + "\n";
+    }
+
     frame += padLine("Prestige Stars: " + std::to_string((int)prestigeStars)) + "\n";
-    frame += padLine("Rats: " + std::to_string(totalRats) + 
-             (ratsEating > 0 ? " (Eating " + std::to_string(ratsEating) + " pies/sec)" : "")) + "\n\n";
+
+    // Show rats line only if rats are present
+    if (totalRats > 0) {
+        frame += padLine("Rats: " + std::to_string(totalRats) +
+            (ratsEatingSingle > 0 ? " (Each eating " + std::to_string((int)ratsEatingSingle) + " pies/sec)" : "")) + "\n\n";
+    } else {
+        frame += "\n";
+    }
 
     frame += padLine("[SPACE] Bake a pie!") + "\n\n";
 
@@ -420,14 +432,37 @@ void renderFrame(float deltaTime) {
 
     frame += "\n";
 
-    std::vector<std::string> pieToShow = showPressedPie ? piePressed : (idleFrame == 0 ? pieIdle1 : pieIdle2);
-    for (const auto& line : pieToShow) frame += padLine(line) + "\n";
+    std::vector<std::string> steamToShow = (idleFrame == 0) ? pieSteam1 : pieSteam2;
+    std::vector<std::string> pieToShow = showPressedPie ? piePressed : pieIdle1;
 
+    // Draw steam, then pie, then artist tag
     if (totalRats > 0) {
-        for (const auto& line : ratArt) {
-            frame += padLine(line) + "\n";
+        size_t steamLines = steamToShow.size();
+        size_t pieLines = pieToShow.size();
+        size_t ratLines = ratArt.size();
+        int gap = 2; // Space between pie and rat for clarity
+
+        // Draw steam
+        for (size_t i = 0; i < steamLines; ++i) {
+            frame += padLine(steamToShow[i]) + "\n";
         }
-        frame += padLine(" " + std::to_string(totalRats) + " rats are stealing your pies!") + "\n";
+        // Draw pie and rat side by side
+        for (size_t i = 0; i < std::max(pieLines, ratLines); ++i) {
+            std::string pieLine = (i < pieLines) ? pieToShow[i] : std::string(pieToShow[0].size(), ' ');
+            std::string ratLine = (i < ratLines) ? ratArt[i] : "";
+            frame += padLine(pieLine + std::string(gap, ' ') + ratLine) + "\n";
+        }
+        // Draw artist tag under the pie (aligned with pie start)
+        frame += padLine("     Riitta Rasimus") + "\n";
+        // Rats stealing message under the rat (aligned with rat)
+        std::string ratMsg = std::to_string(totalRats) + " rats are stealing your pies!";
+        int pieAndGapWidth = (int)pieToShow[0].size() + gap + 19; // 19 aligns under rat's head
+        frame += padLine(std::string(pieAndGapWidth, ' ') + ratMsg) + "\n";
+    } else {
+        // No rats: just steam, pie, and artist tag
+        for (const auto& line : steamToShow) frame += padLine(line) + "\n";
+        for (const auto& line : pieToShow) frame += padLine(line) + "\n";
+        frame += padLine("     Riitta Rasimus") + "\n";
     }
 
     if (!announcement.empty()) {
@@ -512,6 +547,12 @@ int main() {
                 piesBakedThisRun = 1000000; // For testing, also set this
             }
 
+            // Secret button: Give 50,000 pies (jump to rats)
+            if (keyPressed('Z')) {
+                totalPies += 50000;
+                piesBakedThisRun += 50000;
+            }
+
             // Unlock prestige permanently once reached
             if (!prestigeUnlocked && piesBakedThisRun >= 1000) {
                 prestigeUnlocked = true;
@@ -544,35 +585,35 @@ int main() {
                 pendingPies -= piesToAdd;
             }
 
-            // === RATS (Updated Logic) ===
-            ratSpawnTimer += deltaTime;
+            static bool ratsWereVisible = false;
 
-            if (totalPies >= RAT_THRESHOLD && ratSpawnTimer >= RAT_SPAWN_INTERVAL) {
-                ratSpawnTimer = 0.0f;
+            // === RATS (Exponential Scaling, correct per-second display) ===
+            if (totalPies >= RAT_THRESHOLD) {
+                totalRats = static_cast<int>(10 * pow((double)totalPies / RAT_THRESHOLD, 1.2));
+                if (totalRats > RAT_MAX) totalRats = RAT_MAX;
 
-                int maxRats = BASE_RAT_MAX;
-                if (totalPies >= ENDGAME_THRESHOLD) {
-                    maxRats *= 2; // Aggressive surge cap
+                float singleRatEatRate = RAT_EAT_RATE * (1.0f + log10f(std::max(totalRats, 1)));
+                int ratsEatingPerSecond = static_cast<int>(totalRats * singleRatEatRate);
+
+                // Deduct the correct total amount per frame
+                int ratsEatingThisFrame = static_cast<int>(std::min(ratsEatingPerSecond * deltaTime, (float)totalPies));
+                totalPies -= ratsEatingThisFrame;
+
+                // For display
+                ratsEating = ratsEatingPerSecond;         // total pies/sec eaten by all rats
+                ratsEatingSingle = singleRatEatRate;      // pies/sec eaten by one rat
+
+                // Clear screen when rats appear for the first time
+                if (!ratsWereVisible) {
+                    system("cls");
+                    ratsWereVisible = true;
                 }
-
-                // Chance of surge (1%)
-                bool surge = (rand() % 100) < RAT_SURGE_CHANCE;
-
-                if (surge) {
-                    totalRats += 10 + rand() % 10; // Random surge between 10–19
-                } else {
-                    totalRats += 1 + rand() % 3; // Regular spawn: 1–3 rats
-                }
-
-                // Clamp to max
-                if (totalRats > maxRats) {
-                    totalRats = maxRats;
-                }
+            } else {
+                totalRats = 0;
+                ratsEating = 0;
+                ratsEatingSingle = 0;
+                ratsWereVisible = false;
             }
-
-            // Rats eat pies
-            ratsEating = static_cast<int>(std::min((float)totalRats * RAT_EAT_RATE * deltaTime, (float)totalPies));
-            totalPies -= ratsEating;
 
             // Animation
             if (pieAnimTimer > 0) {
