@@ -132,7 +132,7 @@ int idleFrame = 0;
 float idleTimer = 0.0f;
 
 std::vector<std::string> ratArt = {
-    "                   .---.",
+    "                   .-------.",
     "              (\\./)     \\.......-",
     "              >' '<  (__.'\"\"\"\"BP",
     "              \" ` \" \""
@@ -587,32 +587,38 @@ int main() {
 
             static bool ratsWereVisible = false;
 
-            // === RATS (Exponential Scaling, correct per-second display) ===
+            // === RATS (Exponential Scaling, much softer curves) ===
             if (totalPies >= RAT_THRESHOLD) {
-                totalRats = static_cast<int>(10 * pow((double)totalPies / RAT_THRESHOLD, 1.2));
+                double progress = std::min((double)totalPies / 1000000.0, 1.0);
+                double exponent = 1.01 + 0.7 * pow(progress, 2); // very gentle curve
+                totalRats = static_cast<int>(3 * pow((double)totalPies / RAT_THRESHOLD, exponent));
                 if (totalRats > RAT_MAX) totalRats = RAT_MAX;
 
-                float singleRatEatRate = RAT_EAT_RATE * (1.0f + log10f(std::max(totalRats, 1)));
+                double endgameFactor = pow(progress, 3);
+                // Single rat eating rate is NOT related to rat count, only piesPerSecond and endgame
+                float singleRatEatRate = RAT_EAT_RATE
+                    + (0.005f + 0.025f * endgameFactor) * piesPerSecond;
+
                 int ratsEatingPerSecond = static_cast<int>(totalRats * singleRatEatRate);
 
-                // Deduct the correct total amount per frame
                 int ratsEatingThisFrame = static_cast<int>(std::min(ratsEatingPerSecond * deltaTime, (float)totalPies));
                 totalPies -= ratsEatingThisFrame;
 
-                // For display
-                ratsEating = ratsEatingPerSecond;         // total pies/sec eaten by all rats
-                ratsEatingSingle = singleRatEatRate;      // pies/sec eaten by one rat
+                ratsEating = ratsEatingPerSecond;
+                ratsEatingSingle = singleRatEatRate;
 
-                // Clear screen when rats appear for the first time
                 if (!ratsWereVisible) {
                     system("cls");
                     ratsWereVisible = true;
                 }
             } else {
+                if (ratsWereVisible) {
+                    system("cls");
+                    ratsWereVisible = false;
+                }
                 totalRats = 0;
                 ratsEating = 0;
                 ratsEatingSingle = 0;
-                ratsWereVisible = false;
             }
 
             // Animation
