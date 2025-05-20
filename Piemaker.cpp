@@ -40,11 +40,7 @@ struct Upgrade {
     std::function<void()> effect;
 };
 
-std::vector<Upgrade> upgrades = {
-    {"Better Ovens", 500, false, false, [] { piesPerSecond += grandmas; }},
-    {"Industrial Wheat", 1000, false, false, [] { piesPerSecond += bakeries * 2; }},
-    {"Robot Bakers", 5000, false, false, [] { piesPerSecond += factories * 3; }}
-};
+std::vector<Upgrade> upgrades;
 
 // ========================
 // ASCII ART
@@ -168,52 +164,69 @@ void buyFactory() {
 }
 
 // ========================
-// PRESTIGE SYSTEM - UPDATED TO RESET VISIBILITY
+// PRESTIGE RESET
 // ========================
-void resetForPrestige() {
-    float starsGained = sqrt(totalPies / 1000.0f);
-    prestigeStars += starsGained;
+void resetGameState() {
     totalPies = 0;
     piesPerSecond = 0;
     pendingPies = 0.0f;
     grandmas = bakeries = factories = 0;
+    prestigeStars = 0;
 
-    // Reset visibility on prestige if desired
     grandmasVisible = bakeriesVisible = factoriesVisible = false;
-    for (auto& upgrade : upgrades) upgrade.visible = false;
+
+    upgrades = {
+        {"Better Ovens", 500, false, false, [] { piesPerSecond += grandmas; }},
+        {"Industrial Wheat", 1000, false, false, [] { piesPerSecond += bakeries * 2; }},
+        {"Robot Bakers", 5000, false, false, [] { piesPerSecond += factories * 3; }}
+    };
 }
 
 // ========================
-// CELEBRATION SCREEN
+// CELEBRATION + PROMPT
 // ========================
 void showCelebration() {
     system("cls");
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 14); // Yellow text
 
-    std::cout << "\n\n";
-    std::cout << "   CONGRATULATIONS!   \n";
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    SetConsoleTextAttribute(hConsole, 14); // Yellow
+    std::cout << "\n\n   CONGRATULATIONS!   \n";
     std::cout << " You baked 1,000,000 pies! \n\n";
 
     for (const auto& line : celebrationPie) std::cout << line << "\n";
 
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 12); // Red
+    SetConsoleTextAttribute(hConsole, 12); // Red
     std::cout << "\n";
     for (const auto& line : fireworks) std::cout << line << "\n";
 
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 10); // Green
-    std::cout << "\n Press any key to continue...";
-    _getch();
-    goalAchieved = true;
+    SetConsoleTextAttribute(hConsole, 7); // Reset to default
+
+    std::cout << "\nWould you like to play again? (Y/N): ";
+
+    char response;
+    while (true) {
+        response = _getch();
+        if (response == 'Y' || response == 'y') {
+            resetGameState();
+            goalAchieved = false;
+            break;
+        }
+        if (response == 'N' || response == 'n') {
+            goalAchieved = true;
+            exit(0);
+        }
+    }
 }
 
 // ========================
-// RENDERING - FIXED TO REDUCE FLICKER & KEEP ALIGNMENT
+// RENDER FRAME
 // ========================
 void renderFrame(float deltaTime) {
     const int CONSOLE_WIDTH = 80;
     std::string frame;
 
-    // Unlock buildings
+    // Unlock logic + announcement
     if (!grandmasVisible && totalPies >= 10) {
         grandmasVisible = true;
         announcement = "New! Grandmas - Bake 1 pie/sec (Cost: 10 pies)";
@@ -254,71 +267,39 @@ void renderFrame(float deltaTime) {
     // Build frame line by line
     frame += padLine("=== PIE MAKER IDLE ===") + "\n";
     frame += padLine("Goal: Bake 1,000,000 pies!") + "\n";
+    frame += padLine("Pies: " + std::to_string(totalPies)) + "\n";
+    frame += padLine("Per second: " + std::to_string(piesPerSecond)) + "\n";
+    frame += padLine("Prestige Stars: " + std::to_string((int)prestigeStars)) + "\n\n";
 
-    std::string piesLine = "Pies: " + std::to_string(totalPies);
-    frame += padLine(piesLine) + "\n";
+    frame += padLine("[SPACE] Bake a pie!") + "\n\n";
 
-    std::string ppsLine = "Per second: " + std::to_string(piesPerSecond);
-    frame += padLine(ppsLine) + "\n";
-
-    std::string prestigeLine = "Prestige Stars: " + std::to_string((int)prestigeStars);
-    frame += padLine(prestigeLine) + "\n";
-
-    frame += "\n";
-
-    frame += padLine("[SPACE] Bake a pie!") + "\n";
-    frame += "\n";
-
-    if (grandmasVisible) {
-        std::string line = "[G] Grandmas: " + std::to_string(grandmas) + " (Cost: " + std::to_string(10 + grandmas * 2) + ")";
-        frame += padLine(line) + "\n";
-    }
-    if (bakeriesVisible) {
-        std::string line = "[B] Bakeries: " + std::to_string(bakeries) + " (Cost: " + std::to_string(50 + bakeries * 10) + ")";
-        frame += padLine(line) + "\n";
-    }
-    if (factoriesVisible) {
-        std::string line = "[F] Factories: " + std::to_string(factories) + " (Cost: " + std::to_string(200 + factories * 50) + ")";
-        frame += padLine(line) + "\n";
-    }
+    if (grandmasVisible) frame += padLine("[G] Grandmas: " + std::to_string(grandmas) + " (Cost: " + std::to_string(10 + grandmas * 2) + ")") + "\n";
+    if (bakeriesVisible) frame += padLine("[B] Bakeries: " + std::to_string(bakeries) + " (Cost: " + std::to_string(50 + bakeries * 10) + ")") + "\n";
+    if (factoriesVisible) frame += padLine("[F] Factories: " + std::to_string(factories) + " (Cost: " + std::to_string(200 + factories * 50) + ")") + "\n";
 
     frame += "\n";
 
-    bool anyUpgrade = false;
-    for (int i = 0; i < upgrades.size(); i++) {
+    for (int i = 0; i < upgrades.size(); ++i) {
         if (upgrades[i].visible && !upgrades[i].purchased) {
-            anyUpgrade = true;
-            std::string line = "[" + std::to_string(i + 1) + "] " + upgrades[i].name + " (" + std::to_string(upgrades[i].cost) + " pies)";
-            frame += padLine(line) + "\n";
+            frame += padLine("[" + std::to_string(i + 1) + "] " + upgrades[i].name + " (" + std::to_string(upgrades[i].cost) + " pies)") + "\n";
         }
     }
 
-    if (anyUpgrade) frame += "\n";
-
     if (totalPies >= 1000) {
-        std::string resetLine = "[R] RESET for " + std::to_string(sqrt(totalPies / 1000.0f)) + " prestige stars!";
-        frame += padLine(resetLine) + "\n";
+        frame += "\n" + padLine("[R] RESET for " + std::to_string(sqrt(totalPies / 1000.0f)) + " prestige stars!") + "\n";
     }
 
     frame += "\n";
 
-    // Pie art
-    std::vector<std::string> pieToShow = showPressedPie ? piePressed :
-        (idleFrame == 0 ? pieIdle1 : pieIdle2);
+    std::vector<std::string> pieToShow = showPressedPie ? piePressed : (idleFrame == 0 ? pieIdle1 : pieIdle2);
+    for (const auto& line : pieToShow) frame += padLine(line) + "\n";
 
-    for (const auto& line : pieToShow) {
-        frame += padLine(line) + "\n";
-    }
-
-    // Announcement (show at bottom)
     if (!announcement.empty()) {
         frame += "\n" + padLine(announcement) + "\n";
     } else {
-        // Print empty line to clear leftover announcement from previous frames
         frame += "\n" + std::string(CONSOLE_WIDTH, ' ') + "\n";
     }
 
-    // Print frame to console
     setCursorPos(0, 0);
     std::cout << frame << std::flush;
 }
@@ -328,75 +309,79 @@ void renderFrame(float deltaTime) {
 // ========================
 int main() {
     hideCursor();
-    system("cls");
-    std::cout << "=== PIE MAKER IDLE ===\n\n";
-    std::cout << "Your goal: Bake ONE MILLION PIES!\n";
-    std::cout << "Start by pressing SPACE to bake your first pie.\n\n";
-    _getch();
 
-    auto lastTime = std::chrono::steady_clock::now();
+    do {
+        resetGameState();
+        system("cls");
+        std::cout << "=== PIE MAKER IDLE ===\n\n";
+        std::cout << "Your goal: Bake ONE MILLION PIES!\n";
+        std::cout << "Start by pressing SPACE to bake your first pie.\n\n";
+        _getch();
 
-    while (!goalAchieved) {
-        // Input
-        if (keyPressed(VK_SPACE)) {
-            totalPies++;
-            showPressedPie = true;
-            pieAnimTimer = 5;
-        }
+        auto lastTime = std::chrono::steady_clock::now();
 
-        if (grandmasVisible && keyPressed('G')) buyGrandma();
-        if (bakeriesVisible && keyPressed('B')) buyBakery();
-        if (factoriesVisible && keyPressed('F')) buyFactory();
-
-        // Upgrades
-        for (int i = 0; i < upgrades.size(); i++) {
-            if (upgrades[i].visible && !upgrades[i].purchased &&
-                keyPressed('1' + i) && totalPies >= upgrades[i].cost) {
-                totalPies -= upgrades[i].cost;
-                upgrades[i].purchased = true;
-                upgrades[i].effect();
+        while (!goalAchieved && totalPies < 1000000) {
+            // Input
+            if (keyPressed(VK_SPACE)) {
+                totalPies++;
+                showPressedPie = true;
+                pieAnimTimer = 5;
             }
+
+            if (grandmasVisible && keyPressed('G')) buyGrandma();
+            if (bakeriesVisible && keyPressed('B')) buyBakery();
+            if (factoriesVisible && keyPressed('F')) buyFactory();
+
+            // Upgrades
+            for (int i = 0; i < upgrades.size(); i++) {
+                if (upgrades[i].visible && !upgrades[i].purchased &&
+                    keyPressed('1' + i) && totalPies >= upgrades[i].cost) {
+                    totalPies -= upgrades[i].cost;
+                    upgrades[i].purchased = true;
+                    upgrades[i].effect();
+                }
+            }
+
+            // Prestige
+            if (totalPies >= 1000 && keyPressed('R')) {
+                prestigeStars += sqrt(totalPies / 1000.0f);
+                resetGameState();
+            }
+
+            // Timing
+            auto now = std::chrono::steady_clock::now();
+            float deltaTime = std::chrono::duration<float>(now - lastTime).count();
+            lastTime = now;
+
+            pendingPies += piesPerSecond * deltaTime;
+            if (pendingPies >= 1.0f) {
+                int piesToAdd = static_cast<int>(pendingPies);
+                totalPies += piesToAdd;
+                pendingPies -= piesToAdd;
+            }
+
+            // Animation
+            if (pieAnimTimer > 0) {
+                pieAnimTimer--;
+                if (pieAnimTimer == 0) showPressedPie = false;
+            }
+
+            idleTimer += deltaTime;
+            if (idleTimer >= 0.5f) {
+                idleFrame = 1 - idleFrame;
+                idleTimer = 0.0f;
+            }
+
+            // Render
+            renderFrame(deltaTime);
+            Sleep(10);
         }
 
-        // Prestige
-        if (totalPies >= 1000 && keyPressed('R')) {
-            resetForPrestige();
-        }
-
-        // Check for goal
         if (totalPies >= 1000000) {
             showCelebration();
-            break;
         }
 
-        // Timing
-        auto now = std::chrono::steady_clock::now();
-        float deltaTime = std::chrono::duration<float>(now - lastTime).count();
-        lastTime = now;
-
-        pendingPies += piesPerSecond * deltaTime;
-        if (pendingPies >= 1.0f) {
-            int piesToAdd = static_cast<int>(pendingPies);
-            totalPies += piesToAdd;
-            pendingPies -= piesToAdd;
-        }
-
-        // Animation
-        if (pieAnimTimer > 0) {
-            pieAnimTimer--;
-            if (pieAnimTimer == 0) showPressedPie = false;
-        }
-
-        idleTimer += deltaTime;
-        if (idleTimer >= 0.5f) {
-            idleFrame = 1 - idleFrame;
-            idleTimer = 0.0f;
-        }
-
-        // Render
-        renderFrame(deltaTime);
-        Sleep(10);
-    }
+    } while (!goalAchieved);
 
     return 0;
 }
