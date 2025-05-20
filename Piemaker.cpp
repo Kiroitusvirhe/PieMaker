@@ -210,7 +210,12 @@ const int SCREEN_HEIGHT = 30;
 std::vector<std::string> screenBuffer(SCREEN_HEIGHT);
 
 void buildFrame() {
-    for (auto& line : screenBuffer) line.clear();
+    // Clear screenBuffer with blank lines of spaces
+    for (auto& line : screenBuffer) {
+        line = std::string(80, ' ');
+    }
+
+    // Now build the new frame as before...
 
     // Check for unlocks
     if (!showGrandmas && totalPies >= 10) {
@@ -277,9 +282,9 @@ void buildFrame() {
 }
 
 void renderFrame() {
-    setCursorPos(0, 0); // Move to top-left without clearing
+    setCursorPos(0, 0);
     for (const auto& line : screenBuffer) {
-        std::cout << line << std::string(80 - line.length(), ' ') << "\n"; // Pad with spaces
+        std::cout << line << "\n";
     }
 }
 
