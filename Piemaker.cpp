@@ -8,6 +8,8 @@
 #include <conio.h>
 #include <sstream>
 #include <locale>
+#include <cstdlib>
+#include <ctime>
 
 // ========================
 // GAME STATE VARIABLES
@@ -18,18 +20,22 @@ int grandmas = 0, bakeries = 0, factories = 0;
 float prestigeStars = 0;
 float pendingPies = 0.0f;
 bool goalAchieved = false;
-bool prestigeUnlocked = false; // <-- Add this line
+bool prestigeUnlocked = false;
+int piesBakedThisRun = 0;
 
 // ========================
-// RAT SYSTEM
+// RAT SYSTEM VARIABLES
 // ========================
 int totalRats = 0;
 int ratsEating = 0;
 float ratSpawnTimer = 0.0f;
 
-const int RAT_THRESHOLD = 100000;
-const float RAT_SPAWN_INTERVAL = 5.0f;
-const int RAT_MAX = 50; // Use this for maxPossibleRats
+const int RAT_THRESHOLD = 50000;         // Rats appear at 50,000 pies
+const float RAT_SPAWN_INTERVAL = 2.0f;   // Check for new rats every 2 seconds
+const int BASE_RAT_MAX = 200;            // Base maximum rats
+const float RAT_EAT_RATE = 2.0f;         // Each rat eats 2 pies per second
+const int RAT_SURGE_CHANCE = 2;          // 1% chance for a rat surge each spawn
+const int ENDGAME_THRESHOLD = 800000;    // Extra aggressive after 800,000 pies
 
 // Visibility tracking
 bool grandmasVisible = false;
@@ -39,9 +45,9 @@ bool factoriesVisible = false;
 // ========================
 // ANNOUNCEMENT SYSTEM
 // ========================
-std::string announcement = "";  // Current announcement message
-float announcementTimer = 0.0f; // How long to show the message
-const float ANNOUNCEMENT_DURATION = 6.0f; // Show for 5 seconds
+std::string announcement = "";
+float announcementTimer = 0.0f;
+const float ANNOUNCEMENT_DURATION = 6.0f;
 
 // ========================
 // UPGRADE SYSTEM
@@ -186,7 +192,6 @@ void buyGrandma() {
         grandmas++;
         piesPerSecond += 1;
         if (upgrades[0].purchased) piesPerSecond += 1;
-        // No clear screen or message here
     }
 }
 
@@ -197,7 +202,6 @@ void buyBakery() {
         bakeries++;
         piesPerSecond += 5;
         if (upgrades[1].purchased) piesPerSecond += 10;
-        // No clear screen or message here
     }
 }
 
@@ -208,7 +212,6 @@ void buyFactory() {
         factories++;
         piesPerSecond += 20;
         if (upgrades[2].purchased) piesPerSecond += 60;
-        // No clear screen or message here
     }
 }
 
@@ -220,12 +223,15 @@ void resetGameState() {
     piesPerSecond = 0;
     pendingPies = 0.0f;
     grandmas = bakeries = factories = 0;
+    totalRats = 0;
+    ratsEating = 0;
     grandmasVisible = bakeriesVisible = factoriesVisible = false;
     upgrades = {
         {"Better Ovens", 500, false, false, [] { piesPerSecond += grandmas; }},
         {"Industrial Wheat", 1000, false, false, [] { piesPerSecond += bakeries * 2; }},
         {"Robot Bakers", 5000, false, false, [] { piesPerSecond += factories * 3; }}
     };
+    piesBakedThisRun = 0; // Reset on prestige
 }
 
 // ========================
@@ -238,52 +244,46 @@ void showCelebration() {
     int frameIdx = 0;
     char response = 0;
 
-    // Calculate the width of the fireworks + pie line for centering
     const auto& fw = fireworksFrames[0];
     int fireworksWidth = fw[0].size();
     int pieWidth = celebrationPie[0].size();
-    int totalWidth = fireworksWidth + 3 + pieWidth + 3 + fireworksWidth; // 3 spaces between each
+    int totalWidth = fireworksWidth + 3 + pieWidth + 3 + fireworksWidth;
 
     std::string congrats = "CONGRATULATIONS!";
     std::string baked = "You baked 1,000,000 pies!";
 
     while (true) {
-        setCursorPos(0, 0); // Smooth animation: overwrite instead of clearing
+        setCursorPos(0, 0);
 
-        // Get current fireworks frame
         const auto& fw = fireworksFrames[frameIdx % fireworksFrames.size()];
 
-        // Print empty lines above for vertical centering
         std::cout << "\n\n";
 
-        // Center and print the congratulations lines
         int leftPad = (totalWidth - (int)congrats.size()) / 2;
         std::cout << std::string(leftPad, ' ') << congrats << "\n";
         leftPad = (totalWidth - (int)baked.size()) / 2;
         std::cout << std::string(leftPad, ' ') << baked << "\n\n";
 
-        // Print fireworks + pie side by side with fixed colors
         for (size_t i = 0; i < celebrationPie.size(); ++i) {
             int color;
             switch (i % 5) {
-                case 0: color = 12; break; // Red
-                case 1: color = 14; break; // Yellow
-                case 2: color = 10; break; // Green
-                case 3: color = 11; break; // Cyan
-                case 4: color = 13; break; // Magenta
+                case 0: color = 12; break;
+                case 1: color = 14; break;
+                case 2: color = 10; break;
+                case 3: color = 11; break;
+                case 4: color = 13; break;
             }
             SetConsoleTextAttribute(hConsole, color);
             std::cout << fw[i % fw.size()];
-            SetConsoleTextAttribute(hConsole, 7); // White for pie
+            SetConsoleTextAttribute(hConsole, 7);
             std::cout << "   " << celebrationPie[i] << "   ";
             SetConsoleTextAttribute(hConsole, color);
             std::cout << fw[i % fw.size()] << "\n";
         }
-        SetConsoleTextAttribute(hConsole, 7); // Reset to default
+        SetConsoleTextAttribute(hConsole, 7);
 
         std::cout << "\nWould you like to play again? (Y/N): ";
 
-        // Check for key press without blocking
         if (_kbhit()) {
             response = _getch();
             if (response == 'Y' || response == 'y') {
@@ -325,7 +325,6 @@ void renderFrame(float deltaTime) {
     // Unlock logic + announcement
     if (!grandmasVisible && totalPies >= 10) {
         grandmasVisible = true;
-        // Clear screen and show unlock message
         system("cls");
         setCursorPos(0, 0);
         std::cout << "=== UNLOCKED ===\n\n";
@@ -364,7 +363,6 @@ void renderFrame(float deltaTime) {
     for (auto& upgrade : upgrades) {
         if (!upgrade.visible && totalPies >= upgrade.cost / 2) {
             upgrade.visible = true;
-            // Clear screen and show unlock message for upgrade
             system("cls");
             setCursorPos(0, 0);
             std::cout << "=== UNLOCKED ===\n\n";
@@ -398,8 +396,8 @@ void renderFrame(float deltaTime) {
     frame += padLine("Pies: " + formatWithCommas(totalPies)) + "\n";
     frame += padLine("Per second: " + std::to_string(piesPerSecond)) + "\n";
     frame += padLine("Prestige Stars: " + std::to_string((int)prestigeStars)) + "\n";
-    frame += padLine("Rats: " + std::to_string(totalRats) +
-        (ratsEating > 0 ? " (Eating " + std::to_string(ratsEating) + " pies/sec)" : "")) + "\n\n";
+    frame += padLine("Rats: " + std::to_string(totalRats) + 
+             (ratsEating > 0 ? " (Eating " + std::to_string(ratsEating) + " pies/sec)" : "")) + "\n\n";
 
     frame += padLine("[SPACE] Bake a pie!") + "\n\n";
 
@@ -415,9 +413,8 @@ void renderFrame(float deltaTime) {
         }
     }
 
-    // Always show prestige reset line once unlocked
     if (prestigeUnlocked) {
-        int piesForDisplay = std::max(totalPies, 1000);
+        int piesForDisplay = std::max(piesBakedThisRun, 1000);
         frame += "\n" + padLine("[R] RESET for " + std::to_string(sqrt(piesForDisplay / 1000.0f)) + " prestige stars!") + "\n";
     }
 
@@ -426,7 +423,6 @@ void renderFrame(float deltaTime) {
     std::vector<std::string> pieToShow = showPressedPie ? piePressed : (idleFrame == 0 ? pieIdle1 : pieIdle2);
     for (const auto& line : pieToShow) frame += padLine(line) + "\n";
 
-    // Show rats under the pie if they exist
     if (totalRats > 0) {
         for (const auto& line : ratArt) {
             frame += padLine(line) + "\n";
@@ -449,6 +445,7 @@ void renderFrame(float deltaTime) {
 // ========================
 int main() {
     hideCursor();
+    srand(static_cast<unsigned int>(time(nullptr)));
 
     do {
         resetGameState();
@@ -464,13 +461,38 @@ int main() {
             // Input
             if (keyPressed(VK_SPACE)) {
                 totalPies++;
+                piesBakedThisRun++; // Track every pie baked
                 showPressedPie = true;
                 pieAnimTimer = 5;
             }
 
-            if (grandmasVisible && keyPressed('G')) buyGrandma();
-            if (bakeriesVisible && keyPressed('B')) buyBakery();
-            if (factoriesVisible && keyPressed('F')) buyFactory();
+            if (grandmasVisible && keyPressed('G')) {
+                int cost = 10 + (grandmas * 2);
+                if (totalPies >= cost) {
+                    totalPies -= cost;
+                    grandmas++;
+                    piesPerSecond += 1;
+                    if (upgrades[0].purchased) piesPerSecond += 1;
+                }
+            }
+            if (bakeriesVisible && keyPressed('B')) {
+                int cost = 50 + (bakeries * 10);
+                if (totalPies >= cost) {
+                    totalPies -= cost;
+                    bakeries++;
+                    piesPerSecond += 5;
+                    if (upgrades[1].purchased) piesPerSecond += 10;
+                }
+            }
+            if (factoriesVisible && keyPressed('F')) {
+                int cost = 200 + (factories * 50);
+                if (totalPies >= cost) {
+                    totalPies -= cost;
+                    factories++;
+                    piesPerSecond += 20;
+                    if (upgrades[2].purchased) piesPerSecond += 60;
+                }
+            }
 
             // Upgrades
             for (int i = 0; i < upgrades.size(); i++) {
@@ -479,24 +501,25 @@ int main() {
                     totalPies -= upgrades[i].cost;
                     upgrades[i].purchased = true;
                     upgrades[i].effect();
-                    showUnlockMessage("Upgrade Purchased: " + upgrades[i].name +
-                        "\n\nEffect applied!");
+                    showUnlockMessage("Upgrade Purchased: " + upgrades[i].name + 
+                                     "\n\nEffect applied!");
                 }
             }
 
-            // --- SECRET BUTTON: Press 'X' to win instantly ---
+            // Secret button
             if (keyPressed('X')) {
                 totalPies = 1000000;
+                piesBakedThisRun = 1000000; // For testing, also set this
             }
 
             // Unlock prestige permanently once reached
-            if (!prestigeUnlocked && totalPies >= 1000) {
+            if (!prestigeUnlocked && piesBakedThisRun >= 1000) {
                 prestigeUnlocked = true;
             }
 
             // Prestige
-            if (totalPies >= 1000 && keyPressed('R')) {
-                prestigeStars += sqrt(totalPies / 1000.0f);
+            if (piesBakedThisRun >= 1000 && keyPressed('R')) {
+                prestigeStars += sqrt(piesBakedThisRun / 1000.0f);
                 resetGameState();
                 system("cls");
                 setCursorPos(0, 0);
@@ -512,67 +535,63 @@ int main() {
             float deltaTime = std::chrono::duration<float>(now - lastTime).count();
             lastTime = now;
 
+            // Apply pies per second
             pendingPies += piesPerSecond * deltaTime;
             if (pendingPies >= 1.0f) {
                 int piesToAdd = static_cast<int>(pendingPies);
                 totalPies += piesToAdd;
+                piesBakedThisRun += piesToAdd; // Track all pies baked by automation
                 pendingPies -= piesToAdd;
             }
 
-            // ========================
-            // RAT SYSTEM UPDATE
-            // ========================
-            if (totalPies >= RAT_THRESHOLD) {
-                ratSpawnTimer += deltaTime;
-                if (ratSpawnTimer >= RAT_SPAWN_INTERVAL) {
-                    ratSpawnTimer = 0.0f;
+            // === RATS (Updated Logic) ===
+            ratSpawnTimer += deltaTime;
 
-                    // More rats spawn as you get closer to 1,000,000
-                    float progress = (float)(totalPies - RAT_THRESHOLD) / (1000000 - RAT_THRESHOLD);
-                    int maxPossibleRats = static_cast<int>(RAT_MAX * progress);
-
-                    if (totalRats < maxPossibleRats) {
-                        // Spawn 1-3 new rats each time
-                        int ratsToAdd = 1 + (rand() % 3);
-                        totalRats = std::min(totalRats + ratsToAdd, maxPossibleRats);
-
-                        if (totalRats == ratsToAdd) { // First rats appearance
-                            announcement = "RATS! They're eating your pies!";
-                            announcementTimer = ANNOUNCEMENT_DURATION;
-                        }
-                    }
-                }
-
-                // Rats eat pies - each rat eats 1 pie per second
-                float piesEaten = totalRats * deltaTime;
-                if (piesEaten >= 1.0f) {
-                    int piesToLose = static_cast<int>(piesEaten);
-                    totalPies = std::max(0, totalPies - piesToLose);
-                    ratsEating = piesToLose; // For animation/display
-                } else {
-                    ratsEating = 0;
-                }
-            } else {
-                totalRats = 0;
-                ratsEating = 0;
+            if (totalPies >= RAT_THRESHOLD && ratSpawnTimer >= RAT_SPAWN_INTERVAL) {
                 ratSpawnTimer = 0.0f;
+
+                int maxRats = BASE_RAT_MAX;
+                if (totalPies >= ENDGAME_THRESHOLD) {
+                    maxRats *= 2; // Aggressive surge cap
+                }
+
+                // Chance of surge (1%)
+                bool surge = (rand() % 100) < RAT_SURGE_CHANCE;
+
+                if (surge) {
+                    totalRats += 10 + rand() % 10; // Random surge between 10–19
+                } else {
+                    totalRats += 1 + rand() % 3; // Regular spawn: 1–3 rats
+                }
+
+                // Clamp to max
+                if (totalRats > maxRats) {
+                    totalRats = maxRats;
+                }
             }
+
+            // Rats eat pies
+            ratsEating = static_cast<int>(std::min((float)totalRats * RAT_EAT_RATE * deltaTime, (float)totalPies));
+            totalPies -= ratsEating;
 
             // Animation
             if (pieAnimTimer > 0) {
                 pieAnimTimer--;
-                if (pieAnimTimer == 0) showPressedPie = false;
+            } else {
+                showPressedPie = false;
             }
 
+            // Idle Frame Swap
             idleTimer += deltaTime;
-            if (idleTimer >= 0.5f) {
+            if (idleTimer > 0.4f) {
                 idleFrame = 1 - idleFrame;
                 idleTimer = 0.0f;
             }
 
             // Render
             renderFrame(deltaTime);
-            Sleep(10);
+
+            Sleep(33); // ~30 FPS
         }
 
         if (totalPies >= 1000000) {
