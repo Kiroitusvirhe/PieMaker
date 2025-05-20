@@ -212,20 +212,6 @@ std::vector<std::string> screenBuffer(SCREEN_HEIGHT);
 void buildFrame() {
     for (auto& line : screenBuffer) line.clear();
 
-    // Check for unlocks
-    if (!showGrandmas && totalPies >= 10) {
-        showGrandmas = true;
-        screenBuffer[18] = "A million sounds like a lot... here's a Grandma to help!";
-    }
-    if (!showBakeries && totalPies >= 100) {
-        showBakeries = true;
-        screenBuffer[19] = "Bakeries unlocked! These can produce more pies!";
-    }
-    if (!showFactories && totalPies >= 500) {
-        showFactories = true;
-        screenBuffer[20] = "Factories now available - mass production time!";
-    }
-
     // Main UI
     screenBuffer[0] = "=== PIE MAKER IDLE ===";
     screenBuffer[1] = "Goal: Bake 1,000,000 pies!";
@@ -266,101 +252,13 @@ void buildFrame() {
         screenBuffer[16] = "[R] RESET for " + std::to_string(sqrt(totalPies / 1000.0f)) + " prestige stars!";
     }
 
+    // --- FIX: Always fill unlock message lines ---
+    screenBuffer[18] = (showGrandmas && totalPies < 100) ? "A million sounds like a lot... here's a Grandma to help!" : " ";
+    screenBuffer[19] = (showBakeries && totalPies < 500) ? "Bakeries unlocked! These can produce more pies!" : " ";
+    screenBuffer[20] = (showFactories && totalPies < 1000) ? "Factories now available - mass production time!" : " ";
+
     // Pie display
     std::vector<std::string> pieToShow = showPressedPie ? piePressed :
                                        (idleFrame == 0 ? pieIdle1 : pieIdle2);
     for (int i = 0; i < pieToShow.size(); i++) {
-        if (22 + i < screenBuffer.size()) {
-            screenBuffer[22 + i] = pieToShow[i];
-        }
-    }
-}
-
-void renderFrame() {
-    setCursorPos(0, 0);
-    for (const auto& line : screenBuffer) {
-        std::cout << line << std::string(80 - line.length(), ' ') << "\n";
-    }
-}
-
-// ========================
-// MAIN GAME LOOP
-// ========================
-int main() {
-    hideCursor();
-    system("cls");
-
-    // Initial message
-    std::cout << "=== PIE MAKER IDLE ===\n\n";
-    std::cout << "Your goal: Bake ONE MILLION PIES!\n";
-    std::cout << "Start by pressing SPACE to bake your first pie.\n\n";
-    std::cout << "Press any key to begin...";
-    _getch();
-
-    auto lastTime = std::chrono::steady_clock::now();
-
-    while (!goalAchieved) {
-        // Input
-        if (keyPressed(VK_SPACE)) {
-            totalPies++;
-            showPressedPie = true;
-            pieAnimTimer = 5;
-        }
-
-        if (showGrandmas && keyPressed('G')) buyGrandma();
-        if (showBakeries && keyPressed('B')) buyBakery();
-        if (showFactories && keyPressed('F')) buyFactory();
-
-        // Upgrades
-        for (int i = 0; i < upgrades.size(); i++) {
-            if (upgrades[i].visible && !upgrades[i].purchased &&
-                keyPressed('1' + i) && totalPies >= upgrades[i].cost) {
-                totalPies -= upgrades[i].cost;
-                upgrades[i].purchased = true;
-                upgrades[i].effect();
-            }
-        }
-
-        // Prestige
-        if (totalPies >= 1000 && keyPressed('R')) {
-            resetForPrestige();
-        }
-
-        // Check for goal
-        if (totalPies >= 1000000) {
-            showCelebration();
-            break;
-        }
-
-        // Timing
-        auto now = std::chrono::steady_clock::now();
-        float deltaTime = std::chrono::duration<float>(now - lastTime).count();
-        lastTime = now;
-
-        pendingPies += piesPerSecond * deltaTime;
-        if (pendingPies >= 1.0f) {
-            int piesToAdd = static_cast<int>(pendingPies);
-            totalPies += piesToAdd;
-            pendingPies -= piesToAdd;
-        }
-
-        // Animation
-        if (pieAnimTimer > 0) {
-            pieAnimTimer--;
-            if (pieAnimTimer == 0) showPressedPie = false;
-        }
-
-        idleTimer += deltaTime;
-        if (idleTimer >= 0.5f) {
-            idleFrame = 1 - idleFrame;
-            idleTimer = 0.0f;
-        }
-
-        // Render
-        buildFrame();
-        renderFrame();
-        Sleep(10);
-    }
-
-    return 0;
-}
+        if 
