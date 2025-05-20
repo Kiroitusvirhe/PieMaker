@@ -277,11 +277,20 @@ void buildFrame() {
 }
 
 void renderFrame() {
-    system("cls"); // Clear the console before rendering
-    setCursorPos(0, 0); // Ensure drawing starts at the top
+    setCursorPos(0, 0); // Move to top-left without clearing
     for (const auto& line : screenBuffer) {
-        std::cout << line << std::string(80 - line.length(), ' ') << "\n";
+        std::cout << line << std::string(80 - line.length(), ' ') << "\n"; // Pad with spaces
     }
+}
+
+// ========================
+// LOCK CONSOLE SIZE
+// ========================
+void lockConsoleSize(int width, int height) {
+    SMALL_RECT windowSize = {0, 0, (short)(width - 1), (short)(height - 1)};
+    COORD bufferSize = { (short)width, (short)height };
+    SetConsoleScreenBufferSize(hConsole, bufferSize);
+    SetConsoleWindowInfo(hConsole, TRUE, &windowSize);
 }
 
 // ========================
@@ -289,7 +298,8 @@ void renderFrame() {
 // ========================
 int main() {
     hideCursor();
-    system("cls");
+    lockConsoleSize(80, SCREEN_HEIGHT); // Optional, but recommended for stable UI
+    system("cls"); // One-time clear
 
     // Initial message
     std::cout << "=== PIE MAKER IDLE ===\n\n";
