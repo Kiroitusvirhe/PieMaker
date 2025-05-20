@@ -46,31 +46,34 @@ std::vector<Upgrade> upgrades = {
 // PIE ASCII ART & ANIMATION
 // ========================
 
-// Default pie (idle frame A)
+// Idle frame A — steam gently rising (variation 1)
 std::vector<std::string> pieIdle1 = {
-    "   (  )   ",
-    "  (    )  ",
-    " (______) ",
-    "  \\====/  ",
-    "   \\__/   "
+    "   ~     ~    ",       // Gentle steam
+    "  ~   ~   ~   ",       // Steam waves moving
+    "   .-''''''-. ",       // Crust top of the pie
+    "  /          \\",      // Slanted pie sides
+    " |  ~~~ ~~ ~~ |",      // Filling with some texture
+    "  \\__________/ "      // Bottom crust
 };
 
-// Idle frame B (used for idle animation)
+// Idle frame B — alternate steam pattern (variation 2)
 std::vector<std::string> pieIdle2 = {
-    "   (  )   ",
-    "  ( .. )  ",
-    " (------) ",
-    "  \\====/  ",
-    "   \\__/   "
+    "     ~   ~    ",       // Slightly shifted steam
+    "  ~     ~   ~ ",       // Idle animation flips this with frame A
+    "   .-''''''-. ",       // Same pie body
+    "  /          \\",      
+    " |  ~~~ ~~ ~~ |",      
+    "  \\__________/ "      
 };
 
-// Pressed pie when clicked
+// Clicked pie — shows more active steam and some filling popping
 std::vector<std::string> piePressed = {
-    "   \\  /   ",
-    "  ( oo )  ",
-    " (======) ",
-    "  /====\\  ",
-    "   /__\\   "
+    "   \\  ^  ^  / ",       // Upward steam during "click"
+    "    \\ ^  ^ /  ",       
+    "   .-''''''-. ",        // Pie top
+    "  /   O  O   \\",       // Filling looks like it "puffs"
+    " |    ===     |",       // Pie filling center
+    "  \\__________/ "       // Crust bottom
 };
 
 // Controls which pie to display
