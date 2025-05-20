@@ -20,6 +20,17 @@ float pendingPies = 0.0f;
 bool goalAchieved = false;
 bool prestigeUnlocked = false; // <-- Add this line
 
+// ========================
+// RAT SYSTEM
+// ========================
+int totalRats = 0;
+int ratsEating = 0;
+float ratSpawnTimer = 0.0f;
+
+const int RAT_THRESHOLD = 100000;
+const float RAT_SPAWN_INTERVAL = 5.0f;
+const int RAT_MAX = 50; // Use this for maxPossibleRats
+
 // Visibility tracking
 bool grandmasVisible = false;
 bool bakeriesVisible = false;
@@ -116,6 +127,12 @@ bool showPressedPie = false;
 int pieAnimTimer = 0;
 int idleFrame = 0;
 float idleTimer = 0.0f;
+
+std::vector<std::string> ratArt = {
+    "    ____()()   ",
+    "   /      @@   ",
+    "  `~~~~~\\_;m__m._>o "
+};
 
 // ========================
 // CONSOLE HELPERS
@@ -380,7 +397,9 @@ void renderFrame(float deltaTime) {
     frame += padLine("Goal: Bake 1,000,000 pies!") + "\n";
     frame += padLine("Pies: " + formatWithCommas(totalPies)) + "\n";
     frame += padLine("Per second: " + std::to_string(piesPerSecond)) + "\n";
-    frame += padLine("Prestige Stars: " + std::to_string((int)prestigeStars)) + "\n\n";
+    frame += padLine("Prestige Stars: " + std::to_string((int)prestigeStars)) + "\n";
+    frame += padLine("Rats: " + std::to_string(totalRats) +
+        (ratsEating > 0 ? " (Eating " + std::to_string(ratsEating) + " pies/sec)" : "")) + "\n\n";
 
     frame += padLine("[SPACE] Bake a pie!") + "\n\n";
 
@@ -406,6 +425,14 @@ void renderFrame(float deltaTime) {
 
     std::vector<std::string> pieToShow = showPressedPie ? piePressed : (idleFrame == 0 ? pieIdle1 : pieIdle2);
     for (const auto& line : pieToShow) frame += padLine(line) + "\n";
+
+    // Show rats under the pie if they exist
+    if (totalRats > 0) {
+        for (const auto& line : ratArt) {
+            frame += padLine(line) + "\n";
+        }
+        frame += padLine(" " + std::to_string(totalRats) + " rats are stealing your pies!") + "\n";
+    }
 
     if (!announcement.empty()) {
         frame += "\n" + padLine(announcement) + "\n";
@@ -452,8 +479,8 @@ int main() {
                     totalPies -= upgrades[i].cost;
                     upgrades[i].purchased = true;
                     upgrades[i].effect();
-                    showUnlockMessage("Upgrade Purchased: " + upgrades[i].name + 
-                                     "\n\nEffect applied!");
+                    showUnlockMessage("Upgrade Purchased: " + upgrades[i].name +
+                        "\n\nEffect applied!");
                 }
             }
 
@@ -490,6 +517,45 @@ int main() {
                 int piesToAdd = static_cast<int>(pendingPies);
                 totalPies += piesToAdd;
                 pendingPies -= piesToAdd;
+            }
+
+            // ========================
+            // RAT SYSTEM UPDATE
+            // ========================
+            if (totalPies >= RAT_THRESHOLD) {
+                ratSpawnTimer += deltaTime;
+                if (ratSpawnTimer >= RAT_SPAWN_INTERVAL) {
+                    ratSpawnTimer = 0.0f;
+
+                    // More rats spawn as you get closer to 1,000,000
+                    float progress = (float)(totalPies - RAT_THRESHOLD) / (1000000 - RAT_THRESHOLD);
+                    int maxPossibleRats = static_cast<int>(RAT_MAX * progress);
+
+                    if (totalRats < maxPossibleRats) {
+                        // Spawn 1-3 new rats each time
+                        int ratsToAdd = 1 + (rand() % 3);
+                        totalRats = std::min(totalRats + ratsToAdd, maxPossibleRats);
+
+                        if (totalRats == ratsToAdd) { // First rats appearance
+                            announcement = "RATS! They're eating your pies!";
+                            announcementTimer = ANNOUNCEMENT_DURATION;
+                        }
+                    }
+                }
+
+                // Rats eat pies - each rat eats 1 pie per second
+                float piesEaten = totalRats * deltaTime;
+                if (piesEaten >= 1.0f) {
+                    int piesToLose = static_cast<int>(piesEaten);
+                    totalPies = std::max(0, totalPies - piesToLose);
+                    ratsEating = piesToLose; // For animation/display
+                } else {
+                    ratsEating = 0;
+                }
+            } else {
+                totalRats = 0;
+                ratsEating = 0;
+                ratSpawnTimer = 0.0f;
             }
 
             // Animation
