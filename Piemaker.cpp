@@ -6,6 +6,8 @@
 #include <string>
 #include <functional>
 #include <conio.h>
+#include <sstream>
+#include <locale>
 
 // ========================
 // GAME STATE VARIABLES
@@ -16,6 +18,7 @@ int grandmas = 0, bakeries = 0, factories = 0;
 float prestigeStars = 0;
 float pendingPies = 0.0f;
 bool goalAchieved = false;
+bool prestigeUnlocked = false; // <-- Add this line
 
 // Visibility tracking
 bool grandmasVisible = false;
@@ -85,12 +88,28 @@ std::vector<std::string> celebrationPie = {
     "        V        "
 };
 
-std::vector<std::string> fireworks = {
-    "   *  .  *  .  *   ",
-    " .    *    *    .  ",
-    "   .  *  *  *      ",
-    " *   .     *   .   ",
-    "      *  .  *      "
+std::vector<std::vector<std::string>> fireworksFrames = {
+    {
+        "   *  .  *  .  *   ",
+        " .    *    *    .  ",
+        "   .  *  *  *      ",
+        " *   .     *   .   ",
+        "      *  .  *      "
+    },
+    {
+        "      .  *  .      ",
+        " *   .     *   .   ",
+        "   *  .  *  .  *   ",
+        " .    *    *    .  ",
+        "   .  *  *  *      "
+    },
+    {
+        " .    *    *    .  ",
+        "   .  *  *  *      ",
+        "      *  .  *      ",
+        "   *  .  *  .  *   ",
+        " *   .     *   .   "
+    }
 };
 
 bool showPressedPie = false;
@@ -150,7 +169,7 @@ void buyGrandma() {
         grandmas++;
         piesPerSecond += 1;
         if (upgrades[0].purchased) piesPerSecond += 1;
-        showUnlockMessage("Grandma purchased!\n\nTotal Grandmas: " + std::to_string(grandmas));
+        // No clear screen or message here
     }
 }
 
@@ -161,7 +180,7 @@ void buyBakery() {
         bakeries++;
         piesPerSecond += 5;
         if (upgrades[1].purchased) piesPerSecond += 10;
-        showUnlockMessage("Bakery purchased!\n\nTotal Bakeries: " + std::to_string(bakeries));
+        // No clear screen or message here
     }
 }
 
@@ -172,7 +191,7 @@ void buyFactory() {
         factories++;
         piesPerSecond += 20;
         if (upgrades[2].purchased) piesPerSecond += 60;
-        showUnlockMessage("Factory purchased!\n\nTotal Factories: " + std::to_string(factories));
+        // No clear screen or message here
     }
 }
 
@@ -184,10 +203,7 @@ void resetGameState() {
     piesPerSecond = 0;
     pendingPies = 0.0f;
     grandmas = bakeries = factories = 0;
-    prestigeStars = 0;
-
     grandmasVisible = bakeriesVisible = factoriesVisible = false;
-
     upgrades = {
         {"Better Ovens", 500, false, false, [] { piesPerSecond += grandmas; }},
         {"Industrial Wheat", 1000, false, false, [] { piesPerSecond += bakeries * 2; }},
@@ -200,36 +216,86 @@ void resetGameState() {
 // ========================
 void showCelebration() {
     system("cls");
-
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-    SetConsoleTextAttribute(hConsole, 14); // Yellow
-    std::cout << "\n\n   CONGRATULATIONS!   \n";
-    std::cout << " You baked 1,000,000 pies! \n\n";
+    int frameIdx = 0;
+    char response = 0;
 
-    for (const auto& line : celebrationPie) std::cout << line << "\n";
+    // Calculate the width of the fireworks + pie line for centering
+    const auto& fw = fireworksFrames[0];
+    int fireworksWidth = fw[0].size();
+    int pieWidth = celebrationPie[0].size();
+    int totalWidth = fireworksWidth + 3 + pieWidth + 3 + fireworksWidth; // 3 spaces between each
 
-    SetConsoleTextAttribute(hConsole, 12); // Red
-    std::cout << "\n";
-    for (const auto& line : fireworks) std::cout << line << "\n";
+    std::string congrats = "CONGRATULATIONS!";
+    std::string baked = "You baked 1,000,000 pies!";
 
-    SetConsoleTextAttribute(hConsole, 7); // Reset to default
-
-    std::cout << "\nWould you like to play again? (Y/N): ";
-
-    char response;
     while (true) {
-        response = _getch();
-        if (response == 'Y' || response == 'y') {
-            resetGameState();
-            goalAchieved = false;
-            break;
+        setCursorPos(0, 0); // Smooth animation: overwrite instead of clearing
+
+        // Get current fireworks frame
+        const auto& fw = fireworksFrames[frameIdx % fireworksFrames.size()];
+
+        // Print empty lines above for vertical centering
+        std::cout << "\n\n";
+
+        // Center and print the congratulations lines
+        int leftPad = (totalWidth - (int)congrats.size()) / 2;
+        std::cout << std::string(leftPad, ' ') << congrats << "\n";
+        leftPad = (totalWidth - (int)baked.size()) / 2;
+        std::cout << std::string(leftPad, ' ') << baked << "\n\n";
+
+        // Print fireworks + pie side by side with fixed colors
+        for (size_t i = 0; i < celebrationPie.size(); ++i) {
+            int color;
+            switch (i % 5) {
+                case 0: color = 12; break; // Red
+                case 1: color = 14; break; // Yellow
+                case 2: color = 10; break; // Green
+                case 3: color = 11; break; // Cyan
+                case 4: color = 13; break; // Magenta
+            }
+            SetConsoleTextAttribute(hConsole, color);
+            std::cout << fw[i % fw.size()];
+            SetConsoleTextAttribute(hConsole, 7); // White for pie
+            std::cout << "   " << celebrationPie[i] << "   ";
+            SetConsoleTextAttribute(hConsole, color);
+            std::cout << fw[i % fw.size()] << "\n";
         }
-        if (response == 'N' || response == 'n') {
-            goalAchieved = true;
-            exit(0);
+        SetConsoleTextAttribute(hConsole, 7); // Reset to default
+
+        std::cout << "\nWould you like to play again? (Y/N): ";
+
+        // Check for key press without blocking
+        if (_kbhit()) {
+            response = _getch();
+            if (response == 'Y' || response == 'y') {
+                resetGameState();
+                goalAchieved = false;
+                break;
+            }
+            if (response == 'N' || response == 'n') {
+                goalAchieved = true;
+                exit(0);
+            }
         }
+
+        Sleep(100);
+        frameIdx++;
     }
+}
+
+// ========================
+// HELPER FUNCTIONS
+// ========================
+std::string formatWithCommas(int value) {
+    std::string num = std::to_string(value);
+    int insertPosition = num.length() - 3;
+    while (insertPosition > 0) {
+        num.insert(insertPosition, ",");
+        insertPosition -= 3;
+    }
+    return num;
 }
 
 // ========================
@@ -312,7 +378,7 @@ void renderFrame(float deltaTime) {
     // Build frame line by line
     frame += padLine("=== PIE MAKER IDLE ===") + "\n";
     frame += padLine("Goal: Bake 1,000,000 pies!") + "\n";
-    frame += padLine("Pies: " + std::to_string(totalPies)) + "\n";
+    frame += padLine("Pies: " + formatWithCommas(totalPies)) + "\n";
     frame += padLine("Per second: " + std::to_string(piesPerSecond)) + "\n";
     frame += padLine("Prestige Stars: " + std::to_string((int)prestigeStars)) + "\n\n";
 
@@ -330,8 +396,10 @@ void renderFrame(float deltaTime) {
         }
     }
 
-    if (totalPies >= 1000) {
-        frame += "\n" + padLine("[R] RESET for " + std::to_string(sqrt(totalPies / 1000.0f)) + " prestige stars!") + "\n";
+    // Always show prestige reset line once unlocked
+    if (prestigeUnlocked) {
+        int piesForDisplay = std::max(totalPies, 1000);
+        frame += "\n" + padLine("[R] RESET for " + std::to_string(sqrt(piesForDisplay / 1000.0f)) + " prestige stars!") + "\n";
     }
 
     frame += "\n";
@@ -389,10 +457,27 @@ int main() {
                 }
             }
 
+            // --- SECRET BUTTON: Press 'X' to win instantly ---
+            if (keyPressed('X')) {
+                totalPies = 1000000;
+            }
+
+            // Unlock prestige permanently once reached
+            if (!prestigeUnlocked && totalPies >= 1000) {
+                prestigeUnlocked = true;
+            }
+
             // Prestige
             if (totalPies >= 1000 && keyPressed('R')) {
                 prestigeStars += sqrt(totalPies / 1000.0f);
                 resetGameState();
+                system("cls");
+                setCursorPos(0, 0);
+                std::cout << "=== PRESTIGE RESET ===\n\n";
+                std::cout << "You gained prestige stars! (" << (int)prestigeStars << " total)\n\n";
+                std::cout << "Press any key to continue...";
+                _getch();
+                system("cls");
             }
 
             // Timing
