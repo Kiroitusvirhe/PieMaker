@@ -1,95 +1,105 @@
-#include <iostream>        // Used for input/output like std::cout
-#include <windows.h>       // Windows-specific functions like GetAsyncKeyState and Sleep
-#include <cmath>           // For math operations like sqrt
-#include <chrono>          // For measuring time accurately
-#include <vector>          // Dynamic array container
-#include <string>          // For using strings
-#include <functional>      // Allows storing functions inside variables (used for upgrades)
+#include <iostream>
+#include <windows.h>
+#include <cmath>
+#include <chrono>
+#include <vector>
+#include <string>
+#include <functional>
+#include <conio.h>
 
 // ========================
 // GAME STATE VARIABLES
 // ========================
+int totalPies = 0;
+int piesPerSecond = 0;
+int grandmas = 0, bakeries = 0, factories = 0;
+float prestigeStars = 0;
+float pendingPies = 0.0f;
 
-// Core resources
-int totalPies = 0;         // Total pies the player has
-int piesPerSecond = 0;     // How many pies are automatically made each second
-
-// Buildings owned by the player
-int grandmas = 0;          // +1 pie/sec each
-int bakeries = 0;          // +5 pies/sec each
-int factories = 0;         // +20 pies/sec each
-
-// Prestige system
-float prestigeStars = 0;   // Stars earned by resetting progress
-float pendingPies = 0.0f;  // Tracks fractional pies for smooth timing
+// Game progression flags
+bool showGrandmas = false;
+bool showBakeries = false;
+bool showFactories = false;
+bool goalAchieved = false;
 
 // ========================
 // UPGRADE SYSTEM
 // ========================
-
-// Each upgrade has a name, cost, purchased state, and an effect function
 struct Upgrade {
     std::string name;
     int cost;
     bool purchased;
+    bool visible = false;
     std::function<void()> effect;
 };
 
-// List of available upgrades
 std::vector<Upgrade> upgrades = {
-    {"Better Ovens", 500, false, [] { piesPerSecond += grandmas; }},
-    {"Industrial Wheat", 1000, false, [] { piesPerSecond += bakeries * 2; }},
-    {"Robot Bakers", 5000, false, [] { piesPerSecond += factories * 3; }}
+    {"Better Ovens", 500, false, false, [] { piesPerSecond += grandmas; }},
+    {"Industrial Wheat", 1000, false, false, [] { piesPerSecond += bakeries * 2; }},
+    {"Robot Bakers", 5000, false, false, [] { piesPerSecond += factories * 3; }}
 };
 
 // ========================
-// PIE ASCII ART & ANIMATION
+// ASCII ART
 // ========================
-
-// Idle frame A — steam gently rising (variation 1)
 std::vector<std::string> pieIdle1 = {
-    "   ~     ~    ",       // Gentle steam
-    "  ~   ~   ~   ",       // Steam waves moving
-    "   .-''''''-. ",       // Crust top of the pie
-    "  /          \\",      // Slanted pie sides
-    " |  ~~~ ~~ ~~ |",      // Filling with some texture
-    "  \\__________/ "      // Bottom crust
+    "   ~     ~    ",
+    "  ~   ~   ~   ",
+    "   .-''''''-. ",
+    "  /          \\",
+    " |  ~~~ ~~ ~~ |",
+    "  \\__________/ "
 };
 
-// Idle frame B — alternate steam pattern (variation 2)
 std::vector<std::string> pieIdle2 = {
-    "     ~   ~    ",       // Slightly shifted steam
-    "  ~     ~   ~ ",       // Idle animation flips this with frame A
-    "   .-''''''-. ",       // Same pie body
-    "  /          \\",      
-    " |  ~~~ ~~ ~~ |",      
-    "  \\__________/ "      
+    "     ~   ~    ",
+    "  ~     ~   ~ ",
+    "   .-''''''-. ",
+    "  /          \\",
+    " |  ~~~ ~~ ~~ |",
+    "  \\__________/ "
 };
 
-// Clicked pie — shows more active steam and some filling popping
 std::vector<std::string> piePressed = {
-    "   \\  ^  ^  / ",       // Upward steam during "click"
-    "    \\ ^  ^ /  ",       
-    "   .-''''''-. ",        // Pie top
-    "  /   O  O   \\",       // Filling looks like it "puffs"
-    " |    ===     |",       // Pie filling center
-    "  \\__________/ "       // Crust bottom
+    "   \\  ^  ^  / ",
+    "    \\ ^  ^ /  ",
+    "   .-''''''-. ",
+    "  /   O  O   \\",
+    " |    ===     |",
+    "  \\__________/ "
 };
 
-// Controls which pie to display
-bool showPressedPie = false;     // True if pie is currently "clicked"
-int pieAnimTimer = 0;            // Countdown to end the click animation
-int idleFrame = 0;               // Current idle animation frame
-float idleTimer = 0.0f;          // Timer to control idle frame switching
+std::vector<std::string> celebrationPie = {
+    "    .-~~~~~-.    ",
+    "   /         \\   ",
+    "  |   *   *   |  ",
+    "  |  =======  |  ",
+    "   \\ ~~~~~~~ /   ",
+    "    `-------`    ",
+    "     \\     /     ",
+    "      \\   /      ",
+    "       \\ /       ",
+    "        V        "
+};
+
+std::vector<std::string> fireworks = {
+    "   *  .  *  .  *   ",
+    " .    *    *    .  ",
+    "   .  *  *  *      ",
+    " *   .     *   .   ",
+    "      *  .  *      "
+};
+
+bool showPressedPie = false;
+int pieAnimTimer = 0;
+int idleFrame = 0;
+float idleTimer = 0.0f;
 
 // ========================
-// CONSOLE DISPLAY HELPERS
+// CONSOLE HELPERS
 // ========================
-
-// Console handle needed for Windows terminal functions
 HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-// Hide the blinking cursor in the console
 void hideCursor() {
     CONSOLE_CURSOR_INFO cursorInfo;
     cursorInfo.dwSize = 1;
@@ -97,34 +107,30 @@ void hideCursor() {
     SetConsoleCursorInfo(hConsole, &cursorInfo);
 }
 
-// Moves the cursor to a specific location in the console window
 void setCursorPos(int x, int y) {
     COORD coord = { (short)x, (short)y };
     SetConsoleCursorPosition(hConsole, coord);
 }
 
 // ========================
-// KEY INPUT DETECTION
+// INPUT HANDLING
 // ========================
-
-// Returns true if the given key was just pressed
 bool keyPressed(int key) {
-    static bool keyStates[256] = { false };  // Remembers key states
+    static bool keyStates[256] = { false };
     bool currentState = (GetAsyncKeyState(key) & 0x8000);
 
     if (currentState && !keyStates[key]) {
         keyStates[key] = true;
-        return true;  // New key press detected
+        return true;
     } else if (!currentState) {
-        keyStates[key] = false;  // Reset on key release
+        keyStates[key] = false;
     }
     return false;
 }
 
 // ========================
-// BUILDING PURCHASE FUNCTIONS
+// BUILDING FUNCTIONS
 // ========================
-
 void buyGrandma() {
     int cost = 10 + (grandmas * 2);
     if (totalPies >= cost) {
@@ -156,73 +162,122 @@ void buyFactory() {
 }
 
 // ========================
-// PRESTIGE RESET FUNCTION
+// PRESTIGE SYSTEM
 // ========================
-
 void resetForPrestige() {
     float starsGained = sqrt(totalPies / 1000.0f);
     prestigeStars += starsGained;
-
-    // Reset everything except stars
     totalPies = 0;
     piesPerSecond = 0;
     pendingPies = 0.0f;
     grandmas = bakeries = factories = 0;
-    // You can reset upgrades here too if you want
+    showGrandmas = showBakeries = showFactories = false;
 }
 
 // ========================
-// FRAME RENDERING
+// CELEBRATION SCREEN
 // ========================
+void showCelebration() {
+    system("cls");
+    SetConsoleTextAttribute(hConsole, 14); // Yellow text
 
-const int SCREEN_HEIGHT = 25;                   // Console lines
-std::vector<std::string> screenBuffer(SCREEN_HEIGHT); // Lines to draw
+    std::cout << "\n\n";
+    std::cout << "   CONGRATULATIONS!   \n";
+    std::cout << " You baked 1,000,000 pies! \n\n";
 
-// Builds the screen content each frame
+    // Display celebration pie
+    for (const auto& line : celebrationPie) {
+        std::cout << line << "\n";
+    }
+
+    // Display fireworks
+    SetConsoleTextAttribute(hConsole, 12); // Red
+    std::cout << "\n";
+    for (const auto& line : fireworks) {
+        std::cout << line << "\n";
+    }
+
+    SetConsoleTextAttribute(hConsole, 10); // Green
+    std::cout << "\n Press any key to continue...";
+    _getch();
+    goalAchieved = true;
+}
+
+// ========================
+// RENDERING
+// ========================
+const int SCREEN_HEIGHT = 30;
+std::vector<std::string> screenBuffer(SCREEN_HEIGHT);
+
 void buildFrame() {
-    for (auto& line : screenBuffer) line.clear();  // Clear previous frame
+    for (auto& line : screenBuffer) line.clear();
 
-    // Stats and menus
+    // Check for unlocks
+    if (!showGrandmas && totalPies >= 10) {
+        showGrandmas = true;
+        screenBuffer[18] = "A million sounds like a lot... here's a Grandma to help!";
+    }
+    if (!showBakeries && totalPies >= 100) {
+        showBakeries = true;
+        screenBuffer[19] = "Bakeries unlocked! These can produce more pies!";
+    }
+    if (!showFactories && totalPies >= 500) {
+        showFactories = true;
+        screenBuffer[20] = "Factories now available - mass production time!";
+    }
+
+    // Main UI
     screenBuffer[0] = "=== PIE MAKER IDLE ===";
-    screenBuffer[1] = "Pies: " + std::to_string(totalPies);
-    screenBuffer[2] = "Per second: " + std::to_string(piesPerSecond);
-    screenBuffer[3] = "Prestige Stars: " + std::to_string(prestigeStars);
-    screenBuffer[5] = "[SPACE] Bake a pie!";
-    screenBuffer[7] = "[G] Grandmas: " + std::to_string(grandmas) + " (Cost: " + std::to_string(10 + grandmas * 2) + ")";
-    screenBuffer[8] = "[B] Bakeries: " + std::to_string(bakeries) + " (Cost: " + std::to_string(50 + bakeries * 10) + ")";
-    screenBuffer[9] = "[F] Factories: " + std::to_string(factories) + " (Cost: " + std::to_string(200 + factories * 50) + ")";
+    screenBuffer[1] = "Goal: Bake 1,000,000 pies!";
+    screenBuffer[2] = "Pies: " + std::to_string(totalPies);
+    screenBuffer[3] = "Per second: " + std::to_string(piesPerSecond);
+    screenBuffer[4] = "Prestige Stars: " + std::to_string(prestigeStars);
+    screenBuffer[6] = "[SPACE] Bake a pie!";
 
-    // Show available upgrades
+    // Buildings (only show if unlocked)
+    if (showGrandmas) {
+        screenBuffer[8] = "[G] Grandmas: " + std::to_string(grandmas) +
+                         " (Cost: " + std::to_string(10 + grandmas * 2) + ")";
+    }
+    if (showBakeries) {
+        screenBuffer[9] = "[B] Bakeries: " + std::to_string(bakeries) +
+                         " (Cost: " + std::to_string(50 + bakeries * 10) + ")";
+    }
+    if (showFactories) {
+        screenBuffer[10] = "[F] Factories: " + std::to_string(factories) +
+                          " (Cost: " + std::to_string(200 + factories * 50) + ")";
+    }
+
+    // Upgrades (stay visible once shown)
     for (int i = 0; i < upgrades.size(); i++) {
-        if (!upgrades[i].purchased && totalPies >= upgrades[i].cost / 2) {
-            screenBuffer[11 + i] = "[" + std::to_string(i + 1) + "] " + upgrades[i].name +
-                                   " (" + std::to_string(upgrades[i].cost) + " pies)";
+        if (!upgrades[i].purchased) {
+            if (totalPies >= upgrades[i].cost / 2) {
+                upgrades[i].visible = true;
+            }
+            if (upgrades[i].visible) {
+                screenBuffer[12 + i] = "[" + std::to_string(i + 1) + "] " + upgrades[i].name +
+                                      " (" + std::to_string(upgrades[i].cost) + " pies)";
+            }
         }
     }
 
-    // Prestige option appears after 1000 pies
+    // Prestige
     if (totalPies >= 1000) {
-        screenBuffer[15] = "[R] RESET for " + std::to_string(sqrt(totalPies / 1000.0f)) + " prestige stars!";
+        screenBuffer[16] = "[R] RESET for " + std::to_string(sqrt(totalPies / 1000.0f)) + " prestige stars!";
     }
 
-    // Choose which pie graphic to show
-    std::vector<std::string> pieToShow;
-    if (showPressedPie) {
-        pieToShow = piePressed;
-    } else {
-        pieToShow = (idleFrame == 0 ? pieIdle1 : pieIdle2);
-    }
-
-    // Display pie starting at line 17
+    // Pie display
+    std::vector<std::string> pieToShow = showPressedPie ? piePressed :
+                                       (idleFrame == 0 ? pieIdle1 : pieIdle2);
     for (int i = 0; i < pieToShow.size(); i++) {
-        if (17 + i < screenBuffer.size())
-            screenBuffer[17 + i] = pieToShow[i];
+        if (22 + i < screenBuffer.size()) {
+            screenBuffer[22 + i] = pieToShow[i];
+        }
     }
 }
 
-// Outputs the current screen buffer to the console
 void renderFrame() {
-    setCursorPos(0, 0);  // Reset cursor to top
+    setCursorPos(0, 0);
     for (const auto& line : screenBuffer) {
         std::cout << line << std::string(80 - line.length(), ' ') << "\n";
     }
@@ -231,45 +286,57 @@ void renderFrame() {
 // ========================
 // MAIN GAME LOOP
 // ========================
-
 int main() {
-    hideCursor();         // Hide cursor for cleaner display
-    system("cls");        // Clear screen
+    hideCursor();
+    system("cls");
 
-    auto lastTime = std::chrono::steady_clock::now();  // Track last update time
+    // Initial message
+    std::cout << "=== PIE MAKER IDLE ===\n\n";
+    std::cout << "Your goal: Bake ONE MILLION PIES!\n";
+    std::cout << "Start by pressing SPACE to bake your first pie.\n\n";
+    std::cout << "Press any key to begin...";
+    _getch();
 
-    while (true) {
-        // --- INPUT ---
+    auto lastTime = std::chrono::steady_clock::now();
+
+    while (!goalAchieved) {
+        // Input
         if (keyPressed(VK_SPACE)) {
-            totalPies++;                 // Manual pie click
-            showPressedPie = true;       // Trigger click animation
-            pieAnimTimer = 5;            // Duration for click animation (in frames)
+            totalPies++;
+            showPressedPie = true;
+            pieAnimTimer = 5;
         }
 
-        if (keyPressed('G')) buyGrandma();
-        if (keyPressed('B')) buyBakery();
-        if (keyPressed('F')) buyFactory();
+        if (showGrandmas && keyPressed('G')) buyGrandma();
+        if (showBakeries && keyPressed('B')) buyBakery();
+        if (showFactories && keyPressed('F')) buyFactory();
 
-        // Handle upgrade purchases
+        // Upgrades
         for (int i = 0; i < upgrades.size(); i++) {
-            if (keyPressed('1' + i) && !upgrades[i].purchased && totalPies >= upgrades[i].cost) {
+            if (upgrades[i].visible && !upgrades[i].purchased &&
+                keyPressed('1' + i) && totalPies >= upgrades[i].cost) {
                 totalPies -= upgrades[i].cost;
                 upgrades[i].purchased = true;
                 upgrades[i].effect();
             }
         }
 
-        // Handle prestige
+        // Prestige
         if (totalPies >= 1000 && keyPressed('R')) {
             resetForPrestige();
         }
 
-        // --- TIMING ---
+        // Check for goal
+        if (totalPies >= 1000000) {
+            showCelebration();
+            break;
+        }
+
+        // Timing
         auto now = std::chrono::steady_clock::now();
-        float deltaTime = std::chrono::duration<float>(now - lastTime).count();  // Seconds
+        float deltaTime = std::chrono::duration<float>(now - lastTime).count();
         lastTime = now;
 
-        // Generate pies based on time
         pendingPies += piesPerSecond * deltaTime;
         if (pendingPies >= 1.0f) {
             int piesToAdd = static_cast<int>(pendingPies);
@@ -277,23 +344,22 @@ int main() {
             pendingPies -= piesToAdd;
         }
 
-        // Handle click animation timeout
+        // Animation
         if (pieAnimTimer > 0) {
             pieAnimTimer--;
             if (pieAnimTimer == 0) showPressedPie = false;
         }
 
-        // Idle animation switching every 0.5 seconds
         idleTimer += deltaTime;
         if (idleTimer >= 0.5f) {
-            idleFrame = 1 - idleFrame;  // Flip between 0 and 1
+            idleFrame = 1 - idleFrame;
             idleTimer = 0.0f;
         }
 
-        // --- RENDER ---
+        // Render
         buildFrame();
         renderFrame();
-        Sleep(10);  // Delay to prevent CPU overload
+        Sleep(10);
     }
 
     return 0;
