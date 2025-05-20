@@ -17,6 +17,11 @@ float prestigeStars = 0;
 float pendingPies = 0.0f;
 bool goalAchieved = false;
 
+// Visibility tracking
+bool grandmasVisible = false;
+bool bakeriesVisible = false;
+bool factoriesVisible = false;
+
 // ========================
 // UPGRADE SYSTEM
 // ========================
@@ -24,13 +29,14 @@ struct Upgrade {
     std::string name;
     int cost;
     bool purchased;
+    bool visible = false;
     std::function<void()> effect;
 };
 
 std::vector<Upgrade> upgrades = {
-    {"Better Ovens", 500, false, [] { piesPerSecond += grandmas; }},
-    {"Industrial Wheat", 1000, false, [] { piesPerSecond += bakeries * 2; }},
-    {"Robot Bakers", 5000, false, [] { piesPerSecond += factories * 3; }}
+    {"Better Ovens", 500, false, false, [] { piesPerSecond += grandmas; }},
+    {"Industrial Wheat", 1000, false, false, [] { piesPerSecond += bakeries * 2; }},
+    {"Robot Bakers", 5000, false, false, [] { piesPerSecond += factories * 3; }}
 };
 
 // ========================
@@ -155,7 +161,7 @@ void buyFactory() {
 }
 
 // ========================
-// PRESTIGE SYSTEM
+// PRESTIGE SYSTEM - UPDATED TO RESET VISIBILITY
 // ========================
 void resetForPrestige() {
     float starsGained = sqrt(totalPies / 1000.0f);
@@ -164,6 +170,10 @@ void resetForPrestige() {
     piesPerSecond = 0;
     pendingPies = 0.0f;
     grandmas = bakeries = factories = 0;
+
+    // Reset visibility on prestige if desired
+    grandmasVisible = bakeriesVisible = factoriesVisible = false;
+    for (auto& upgrade : upgrades) upgrade.visible = false;
 }
 
 // ========================
@@ -190,29 +200,72 @@ void showCelebration() {
 }
 
 // ========================
-// RENDERING
+// RENDERING - UPDATED FOR PROGRESSIVE UNLOCKS
 // ========================
 void renderFrame() {
-    setCursorPos(0, 0); // Move cursor to top-left
+    // Check for building unlocks
+    if (!grandmasVisible && totalPies >= 10) grandmasVisible = true;
+    if (!bakeriesVisible && totalPies >= 50) bakeriesVisible = true;
+    if (!factoriesVisible && totalPies >= 200) factoriesVisible = true;
+    
+    // Check for upgrade visibility
+    for (auto& upgrade : upgrades) {
+        if (!upgrade.visible && totalPies >= upgrade.cost / 2) {
+            upgrade.visible = true;
+        }
+    }
+
+    setCursorPos(0, 0);
     std::cout << "=== PIE MAKER IDLE ===" << std::string(57, ' ') << "\n";
     std::cout << "Goal: Bake 1,000,000 pies!" << std::string(57, ' ') << "\n";
     std::cout << "Pies: " << totalPies << std::string(72 - std::to_string(totalPies).length(), ' ') << "\n";
     std::cout << "Per second: " << piesPerSecond << std::string(68 - std::to_string(piesPerSecond).length(), ' ') << "\n";
     std::cout << "Prestige Stars: " << prestigeStars << std::string(65 - std::to_string((int)prestigeStars).length(), ' ') << "\n";
     std::cout << "[SPACE] Bake a pie!" << std::string(62, ' ') << "\n";
-    std::cout << "[G] Grandmas: " << grandmas << " (Cost: " << (10 + grandmas * 2) << ")" << std::string(80, ' ').substr(0, 80 - (18 + std::to_string(grandmas).length() + 8 + std::to_string(10 + grandmas * 2).length())) << "\n";
-    std::cout << "[B] Bakeries: " << bakeries << " (Cost: " << (50 + bakeries * 10) << ")" << std::string(80, ' ').substr(0, 80 - (18 + std::to_string(bakeries).length() + 8 + std::to_string(50 + bakeries * 10).length())) << "\n";
-    std::cout << "[F] Factories: " << factories << " (Cost: " << (200 + factories * 50) << ")" << std::string(80, ' ').substr(0, 80 - (19 + std::to_string(factories).length() + 9 + std::to_string(200 + factories * 50).length())) << "\n";
+
+    // --- A. Space between pies and buildings ---
+    std::cout << "\n";
+
+    // Only show buildings if visible
+    if (grandmasVisible) {
+        std::cout << "[G] Grandmas: " << grandmas << " (Cost: " << (10 + grandmas * 2) << ")" 
+                 << std::string(80 - (18 + std::to_string(grandmas).length() + 8 + std::to_string(10 + grandmas * 2).length()), ' ') << "\n";
+    }
+    if (bakeriesVisible) {
+        std::cout << "[B] Bakeries: " << bakeries << " (Cost: " << (50 + bakeries * 10) << ")" 
+                 << std::string(80 - (18 + std::to_string(bakeries).length() + 8 + std::to_string(50 + bakeries * 10).length()), ' ') << "\n";
+    }
+    if (factoriesVisible) {
+        std::cout << "[F] Factories: " << factories << " (Cost: " << (200 + factories * 50) << ")" 
+                 << std::string(80 - (19 + std::to_string(factories).length() + 9 + std::to_string(200 + factories * 50).length()), ' ') << "\n";
+    }
+
+    // --- B. Space between buildings and upgrades ---
+    std::cout << "\n";
+
+    // Only show upgrades if visible
+    bool anyUpgrade = false;
     for (int i = 0; i < upgrades.size(); i++) {
-        if (!upgrades[i].purchased) {
+        if (upgrades[i].visible && !upgrades[i].purchased) {
+            anyUpgrade = true;
             std::string line = "[" + std::to_string(i + 1) + "] " + upgrades[i].name + " (" + std::to_string(upgrades[i].cost) + " pies)";
             std::cout << line << std::string(80 - line.length(), ' ') << "\n";
         }
     }
+
+    // --- C. Space between upgrades and prestige ---
+    if (anyUpgrade) std::cout << "\n";
+
     if (totalPies >= 1000) {
         std::string line = "[R] RESET for " + std::to_string(sqrt(totalPies / 1000.0f)) + " prestige stars!";
         std::cout << line << std::string(80 - line.length(), ' ') << "\n";
+        // --- D. Space between prestige and ascii pie ---
+        std::cout << "\n";
+    } else {
+        // Always add space before pie art
+        std::cout << "\n";
     }
+
     // Pie art
     std::vector<std::string> pieToShow = showPressedPie ? piePressed :
                                        (idleFrame == 0 ? pieIdle1 : pieIdle2);
@@ -242,13 +295,13 @@ int main() {
             pieAnimTimer = 5;
         }
 
-        if (keyPressed('G')) buyGrandma();
-        if (keyPressed('B')) buyBakery();
-        if (keyPressed('F')) buyFactory();
+        if (grandmasVisible && keyPressed('G')) buyGrandma();
+        if (bakeriesVisible && keyPressed('B')) buyBakery();
+        if (factoriesVisible && keyPressed('F')) buyFactory();
 
         // Upgrades
         for (int i = 0; i < upgrades.size(); i++) {
-            if (!upgrades[i].purchased &&
+            if (upgrades[i].visible && !upgrades[i].purchased &&
                 keyPressed('1' + i) && totalPies >= upgrades[i].cost) {
                 totalPies -= upgrades[i].cost;
                 upgrades[i].purchased = true;
