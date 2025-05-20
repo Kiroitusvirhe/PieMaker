@@ -24,15 +24,31 @@ bool prestigeUnlocked = false;
 int piesBakedThisRun = 0;
 
 // ========================
+// PRESTIGE SHOP VARIABLES
+// ========================
+struct PrestigeUpgrade {
+    std::string name;
+    std::function<int()> getCost;
+    std::function<void()> effect;
+    std::function<bool()> isVisible;
+    std::function<std::string()> getDescription;
+};
+
+int boostPercent = 0;
+int milkPurchased = 0;
+bool hasGoldenSword = false;
+bool inPrestigeShop = false;
+std::vector<PrestigeUpgrade> prestigeUpgrades;
+
+// ========================
 // RAT SYSTEM VARIABLES
 // ========================
 int totalRats = 0;
 int ratsEating = 0;
-float ratsEatingSingle = 0.0f; // <-- Add this line
-
-const int RAT_THRESHOLD = 50000;         // Rats appear at 50,000 pies
-const float RAT_EAT_RATE = 1.0f;         // Each rat eats at least 1 pie per second (will scale up)
-const int RAT_MAX = 999999;              // Optional: hard cap for rats
+float ratsEatingSingle = 0.0f;
+const int RAT_THRESHOLD = 50000;
+const float RAT_EAT_RATE = 1.0f;
+const int RAT_MAX = 999999;
 
 // Visibility tracking
 bool grandmasVisible = false;
@@ -62,8 +78,6 @@ std::vector<Upgrade> upgrades;
 // ========================
 // ASCII ART
 // ========================
-
-// Animated steam sprites (two frames)
 std::vector<std::string> pieSteam1 = {
     "             (",
     "              )"
@@ -73,14 +87,13 @@ std::vector<std::string> pieSteam2 = {
     "           ~ )"
 };
 
-// Pie sprite (no steam, no artist tag)
 std::vector<std::string> pieIdle1 = {
     "         __..---..__",
     "     ,-='  /  |  \\  `=-.",
     "    :--..___________..--;",
     "     \\.,_____________,./"
 };
-std::vector<std::string> pieIdle2 = pieIdle1; // No animation for pie itself
+std::vector<std::string> pieIdle2 = pieIdle1;
 
 std::vector<std::string> piePressed = {
     "         __..---..__",
@@ -181,15 +194,15 @@ bool keyPressed(int key) {
 }
 
 // ========================
-// BUILDING FUNCTIONS
+// BUILDING FUNCTIONS (WITH BOOST)
 // ========================
 void buyGrandma() {
     int cost = 10 + (grandmas * 2);
     if (totalPies >= cost) {
         totalPies -= cost;
         grandmas++;
-        piesPerSecond += 1;
-        if (upgrades[0].purchased) piesPerSecond += 1;
+        piesPerSecond += 1 + (1 * boostPercent / 100);
+        if (upgrades[0].purchased) piesPerSecond += 1 + (1 * boostPercent / 100);
     }
 }
 
@@ -198,8 +211,8 @@ void buyBakery() {
     if (totalPies >= cost) {
         totalPies -= cost;
         bakeries++;
-        piesPerSecond += 5;
-        if (upgrades[1].purchased) piesPerSecond += 10;
+        piesPerSecond += 5 + (5 * boostPercent / 100);
+        if (upgrades[1].purchased) piesPerSecond += 10 + (10 * boostPercent / 100);
     }
 }
 
@@ -208,9 +221,66 @@ void buyFactory() {
     if (totalPies >= cost) {
         totalPies -= cost;
         factories++;
-        piesPerSecond += 20;
-        if (upgrades[2].purchased) piesPerSecond += 60;
+        piesPerSecond += 20 + (20 * boostPercent / 100);
+        if (upgrades[2].purchased) piesPerSecond += 60 + (60 * boostPercent / 100);
     }
+}
+
+// ========================
+// PRESTIGE SHOP FUNCTIONS
+// ========================
+void initializePrestigeShop() {
+    prestigeUpgrades = {
+        {
+            "Boost%",
+            []() { return 1; },
+            []() { boostPercent++; },
+            []() { return true; },
+            []() { return "Increase building outputs and click power by 1% (Current: " + std::to_string(boostPercent) + "%)"; }
+        },
+        {
+            "Milk",
+            []() { return 10 + (milkPurchased * 5); },
+            []() { milkPurchased++; },
+            []() { return true; },
+            []() { return "Attracts cats to reduce rats (Owned: " + std::to_string(milkPurchased) + ")"; }
+        },
+        {
+            "Golden Sword",
+            []() { return 999; },
+            []() { hasGoldenSword = true; },
+            []() { return !hasGoldenSword; },
+            []() { return "Purely cosmetic flex (Limited edition!)"; }
+        }
+    };
+}
+
+void renderPrestigeShop() {
+    const int CONSOLE_WIDTH = 80;
+    std::string frame;
+
+    auto padLine = [&](const std::string& s) -> std::string {
+        if (s.length() < CONSOLE_WIDTH)
+            return s + std::string(CONSOLE_WIDTH - s.length(), ' ');
+        else
+            return s.substr(0, CONSOLE_WIDTH);
+    };
+
+    frame += padLine("=== PRESTIGE SHOP ===") + "\n";
+    frame += padLine("Prestige Stars: " + std::to_string((int)prestigeStars)) + "\n\n";
+
+    for (int i = 0; i < prestigeUpgrades.size(); ++i) {
+        if (prestigeUpgrades[i].isVisible()) {
+            frame += padLine("[" + std::to_string(i + 1) + "] " + prestigeUpgrades[i].name + 
+                           " (" + std::to_string(prestigeUpgrades[i].getCost()) + " stars)") + "\n";
+            frame += padLine("   " + prestigeUpgrades[i].getDescription()) + "\n\n";
+        }
+    }
+
+    frame += padLine("[0] Return to game") + "\n";
+
+    setCursorPos(0, 0);
+    std::cout << frame << std::flush;
 }
 
 // ========================
@@ -229,7 +299,7 @@ void resetGameState() {
         {"Industrial Wheat", 1000, false, false, [] { piesPerSecond += bakeries * 2; }},
         {"Robot Bakers", 5000, false, false, [] { piesPerSecond += factories * 3; }}
     };
-    piesBakedThisRun = 0; // Reset on prestige
+    piesBakedThisRun = 0;
 }
 
 // ========================
@@ -393,7 +463,6 @@ void renderFrame(float deltaTime) {
     frame += padLine("Goal: Bake 1,000,000 pies!") + "\n";
     frame += padLine("Pies: " + formatWithCommas(totalPies)) + "\n";
 
-    // Show rat eating effect on per second line if rats are present
     if (totalRats > 0) {
         frame += padLine("Per second: " + std::to_string(piesPerSecond) +
             " (-" + std::to_string(ratsEating) + ")") + "\n";
@@ -403,7 +472,17 @@ void renderFrame(float deltaTime) {
 
     frame += padLine("Prestige Stars: " + std::to_string((int)prestigeStars)) + "\n";
 
-    // Show rats line only if rats are present
+    // Prestige upgrades status
+    if (boostPercent > 0) {
+        frame += padLine("Boost: " + std::to_string(boostPercent) + "%") + "\n";
+    }
+    if (milkPurchased > 0) {
+        frame += padLine("Milk: " + std::to_string(milkPurchased)) + "\n";
+    }
+    if (hasGoldenSword) {
+        frame += padLine("Golden Sword: OWNED") + "\n";
+    }
+
     if (totalRats > 0) {
         frame += padLine("Rats: " + std::to_string(totalRats) +
             (ratsEatingSingle > 0 ? " (Each eating " + std::to_string((int)ratsEatingSingle) + " pies/sec)" : "")) + "\n\n";
@@ -440,26 +519,21 @@ void renderFrame(float deltaTime) {
         size_t steamLines = steamToShow.size();
         size_t pieLines = pieToShow.size();
         size_t ratLines = ratArt.size();
-        int gap = 2; // Space between pie and rat for clarity
+        int gap = 2;
 
-        // Draw steam
         for (size_t i = 0; i < steamLines; ++i) {
             frame += padLine(steamToShow[i]) + "\n";
         }
-        // Draw pie and rat side by side
         for (size_t i = 0; i < std::max(pieLines, ratLines); ++i) {
             std::string pieLine = (i < pieLines) ? pieToShow[i] : std::string(pieToShow[0].size(), ' ');
             std::string ratLine = (i < ratLines) ? ratArt[i] : "";
             frame += padLine(pieLine + std::string(gap, ' ') + ratLine) + "\n";
         }
-        // Draw artist tag under the pie (aligned with pie start)
         frame += padLine("     Riitta Rasimus") + "\n";
-        // Rats stealing message under the rat (aligned with rat)
         std::string ratMsg = std::to_string(totalRats) + " rats are stealing your pies!";
-        int pieAndGapWidth = (int)pieToShow[0].size() + gap + 19; // 19 aligns under rat's head
+        int pieAndGapWidth = (int)pieToShow[0].size() + gap + 19;
         frame += padLine(std::string(pieAndGapWidth, ' ') + ratMsg) + "\n";
     } else {
-        // No rats: just steam, pie, and artist tag
         for (const auto& line : steamToShow) frame += padLine(line) + "\n";
         for (const auto& line : pieToShow) frame += padLine(line) + "\n";
         frame += padLine("     Riitta Rasimus") + "\n";
@@ -481,6 +555,7 @@ void renderFrame(float deltaTime) {
 int main() {
     hideCursor();
     srand(static_cast<unsigned int>(time(nullptr)));
+    initializePrestigeShop();
 
     do {
         resetGameState();
@@ -495,39 +570,15 @@ int main() {
         while (!goalAchieved && totalPies < 1000000) {
             // Input
             if (keyPressed(VK_SPACE)) {
-                totalPies++;
-                piesBakedThisRun++; // Track every pie baked
+                totalPies += 1 + (1 * boostPercent / 100);
+                piesBakedThisRun += 1 + (1 * boostPercent / 100);
                 showPressedPie = true;
                 pieAnimTimer = 5;
             }
 
-            if (grandmasVisible && keyPressed('G')) {
-                int cost = 10 + (grandmas * 2);
-                if (totalPies >= cost) {
-                    totalPies -= cost;
-                    grandmas++;
-                    piesPerSecond += 1;
-                    if (upgrades[0].purchased) piesPerSecond += 1;
-                }
-            }
-            if (bakeriesVisible && keyPressed('B')) {
-                int cost = 50 + (bakeries * 10);
-                if (totalPies >= cost) {
-                    totalPies -= cost;
-                    bakeries++;
-                    piesPerSecond += 5;
-                    if (upgrades[1].purchased) piesPerSecond += 10;
-                }
-            }
-            if (factoriesVisible && keyPressed('F')) {
-                int cost = 200 + (factories * 50);
-                if (totalPies >= cost) {
-                    totalPies -= cost;
-                    factories++;
-                    piesPerSecond += 20;
-                    if (upgrades[2].purchased) piesPerSecond += 60;
-                }
-            }
+            if (grandmasVisible && keyPressed('G')) buyGrandma();
+            if (bakeriesVisible && keyPressed('B')) buyBakery();
+            if (factoriesVisible && keyPressed('F')) buyFactory();
 
             // Upgrades
             for (int i = 0; i < upgrades.size(); i++) {
@@ -541,13 +592,11 @@ int main() {
                 }
             }
 
-            // Secret button
+            // Secret buttons
             if (keyPressed('X')) {
                 totalPies = 1000000;
-                piesBakedThisRun = 1000000; // For testing, also set this
+                piesBakedThisRun = 1000000;
             }
-
-            // Secret button: Give 50,000 pies (jump to rats)
             if (keyPressed('Z')) {
                 totalPies += 50000;
                 piesBakedThisRun += 50000;
@@ -562,13 +611,31 @@ int main() {
             if (piesBakedThisRun >= 1000 && keyPressed('R')) {
                 prestigeStars += sqrt(piesBakedThisRun / 1000.0f);
                 resetGameState();
-                system("cls");
-                setCursorPos(0, 0);
-                std::cout << "=== PRESTIGE RESET ===\n\n";
-                std::cout << "You gained prestige stars! (" << (int)prestigeStars << " total)\n\n";
-                std::cout << "Press any key to continue...";
-                _getch();
-                system("cls");
+                inPrestigeShop = true;
+                system("cls"); // Clear the screen before entering the prestige shop
+
+                while (inPrestigeShop) {
+                    renderPrestigeShop();
+                    
+                    if (_kbhit()) {
+                        char choice = _getch();
+                        if (choice == '0') {
+                            inPrestigeShop = false;
+                            system("cls");
+                        } else if (choice >= '1' && choice <= '0' + prestigeUpgrades.size()) {
+                            int index = choice - '1';
+                            if (index >= 0 && index < prestigeUpgrades.size() && prestigeUpgrades[index].isVisible()) {
+                                int cost = prestigeUpgrades[index].getCost();
+                                if (prestigeStars >= cost) {
+                                    prestigeStars -= cost;
+                                    prestigeUpgrades[index].effect();
+                                    system("cls");
+                                }
+                            }
+                        }
+                    }
+                    Sleep(100);
+                }
             }
 
             // Timing
@@ -581,26 +648,23 @@ int main() {
             if (pendingPies >= 1.0f) {
                 int piesToAdd = static_cast<int>(pendingPies);
                 totalPies += piesToAdd;
-                piesBakedThisRun += piesToAdd; // Track all pies baked by automation
+                piesBakedThisRun += piesToAdd;
                 pendingPies -= piesToAdd;
             }
 
             static bool ratsWereVisible = false;
 
-            // === RATS (Exponential Scaling, much softer curves) ===
+            // Rat system
             if (totalPies >= RAT_THRESHOLD) {
                 double progress = std::min((double)totalPies / 1000000.0, 1.0);
-                double exponent = 1.01 + 0.7 * pow(progress, 2); // very gentle curve
+                double exponent = 1.01 + 0.7 * pow(progress, 2);
                 totalRats = static_cast<int>(3 * pow((double)totalPies / RAT_THRESHOLD, exponent));
                 if (totalRats > RAT_MAX) totalRats = RAT_MAX;
 
                 double endgameFactor = pow(progress, 3);
-                // Single rat eating rate is NOT related to rat count, only piesPerSecond and endgame
-                float singleRatEatRate = RAT_EAT_RATE
-                    + (0.005f + 0.025f * endgameFactor) * piesPerSecond;
+                float singleRatEatRate = RAT_EAT_RATE + (0.005f + 0.025f * endgameFactor) * piesPerSecond;
 
                 int ratsEatingPerSecond = static_cast<int>(totalRats * singleRatEatRate);
-
                 int ratsEatingThisFrame = static_cast<int>(std::min(ratsEatingPerSecond * deltaTime, (float)totalPies));
                 totalPies -= ratsEatingThisFrame;
 
@@ -628,7 +692,6 @@ int main() {
                 showPressedPie = false;
             }
 
-            // Idle Frame Swap
             idleTimer += deltaTime;
             if (idleTimer > 0.4f) {
                 idleFrame = 1 - idleFrame;
