@@ -36,9 +36,15 @@ struct PrestigeUpgrade {
 
 int boostPercent = 0;
 int milkPurchased = 0;
+int catnipLevel = 0;
 bool hasGoldenSword = false;
 bool inPrestigeShop = false;
 std::vector<PrestigeUpgrade> prestigeUpgrades;
+
+// ========================
+// CAT SYSTEM VARIABLES
+// ========================
+int totalCats = 0;
 
 // ========================
 // RAT SYSTEM VARIABLES
@@ -151,6 +157,12 @@ std::vector<std::string> ratArt = {
     "              \" ` \" \""
 };
 
+std::vector<std::string> catArt = {
+    "      |\\_/|",
+    "      ( o.o )",
+    "       > ^ <"
+};
+
 // ========================
 // CONSOLE HELPERS
 // ========================
@@ -243,7 +255,18 @@ void initializePrestigeShop() {
             []() { return 10 + (milkPurchased * 5); },
             []() { milkPurchased++; },
             []() { return true; },
-            []() { return "Attracts cats to reduce rats (Owned: " + std::to_string(milkPurchased) + ")"; }
+            []() { 
+                int cats = milkPurchased + (milkPurchased / 9);
+                return "Attracts cats to reduce rats (Owned: " + std::to_string(milkPurchased) + 
+                       ", Cats: " + std::to_string(cats) + ")"; 
+            }
+        },
+        {
+            "Catnip",
+            []() { return 2 + (catnipLevel * 2); }, // Cheaper catnip
+            []() { catnipLevel++; },
+            []() { return true; },
+            []() { return "Increases cat hungriness by 1% per level (Level: " + std::to_string(catnipLevel) + ")"; }
         },
         {
             "Golden Sword",
@@ -479,6 +502,12 @@ void renderFrame(float deltaTime) {
     if (milkPurchased > 0) {
         frame += padLine("Milk: " + std::to_string(milkPurchased)) + "\n";
     }
+    if (catnipLevel > 0) {
+        frame += padLine("Catnip: " + std::to_string(catnipLevel)) + "\n";
+    }
+    if (totalCats > 0) {
+        frame += padLine("Cats: " + std::to_string(totalCats)) + "\n";
+    }
     if (hasGoldenSword) {
         frame += padLine("Golden Sword: OWNED") + "\n";
     }
@@ -515,24 +544,33 @@ void renderFrame(float deltaTime) {
     std::vector<std::string> pieToShow = showPressedPie ? piePressed : pieIdle1;
 
     // Draw steam, then pie, then artist tag
-    if (totalRats > 0) {
+    if (totalRats > 0 || totalCats > 0) {
         size_t steamLines = steamToShow.size();
         size_t pieLines = pieToShow.size();
         size_t ratLines = ratArt.size();
+        size_t catLines = catArt.size();
         int gap = 2;
 
         for (size_t i = 0; i < steamLines; ++i) {
             frame += padLine(steamToShow[i]) + "\n";
         }
-        for (size_t i = 0; i < std::max(pieLines, ratLines); ++i) {
+        for (size_t i = 0; i < std::max(pieLines, std::max(ratLines, catLines)); ++i) {
             std::string pieLine = (i < pieLines) ? pieToShow[i] : std::string(pieToShow[0].size(), ' ');
-            std::string ratLine = (i < ratLines) ? ratArt[i] : "";
-            frame += padLine(pieLine + std::string(gap, ' ') + ratLine) + "\n";
+            std::string ratLine = (i < ratLines && totalRats > 0) ? ratArt[i] : "";
+            std::string catLine = (i < catLines && totalCats > 0) ? catArt[i] : "";
+            frame += padLine(pieLine + std::string(gap, ' ') + ratLine + std::string(gap, ' ') + catLine) + "\n";
         }
         frame += padLine("     Riitta Rasimus") + "\n";
-        std::string ratMsg = std::to_string(totalRats) + " rats are stealing your pies!";
-        int pieAndGapWidth = (int)pieToShow[0].size() + gap + 19;
-        frame += padLine(std::string(pieAndGapWidth, ' ') + ratMsg) + "\n";
+        if (totalRats > 0) {
+            std::string ratMsg = std::to_string(totalRats) + " rats are stealing your pies!";
+            int pieAndGapWidth = (int)pieToShow[0].size() + gap + 19;
+            frame += padLine(std::string(pieAndGapWidth, ' ') + ratMsg) + "\n";
+        }
+        if (totalCats > 0) {
+            std::string catMsg = std::to_string(totalCats) + " cats are chasing rats!";
+            int pieAndGapWidth = (int)pieToShow[0].size() + gap + 19 + gap + 13;
+            frame += padLine(std::string(pieAndGapWidth, ' ') + catMsg) + "\n";
+        }
     } else {
         for (const auto& line : steamToShow) frame += padLine(line) + "\n";
         for (const auto& line : pieToShow) frame += padLine(line) + "\n";
@@ -567,7 +605,7 @@ int main() {
 
         auto lastTime = std::chrono::steady_clock::now();
 
-        while (!goalAchieved && totalPies < 1000000) {
+        do {
             // Input
             if (keyPressed(VK_SPACE)) {
                 totalPies += 1 + (1 * boostPercent / 100);
@@ -616,9 +654,12 @@ int main() {
 
                 while (inPrestigeShop) {
                     renderPrestigeShop();
-                    
+
                     if (_kbhit()) {
                         char choice = _getch();
+                        // Flush any extra buffered input to avoid laggy/stuck keys
+                        while (_kbhit()) _getch();
+
                         if (choice == '0') {
                             inPrestigeShop = false;
                             system("cls");
@@ -629,12 +670,12 @@ int main() {
                                 if (prestigeStars >= cost) {
                                     prestigeStars -= cost;
                                     prestigeUpgrades[index].effect();
-                                    system("cls");
+                                    // system("cls"); // Removed for smoother experience
                                 }
                             }
                         }
                     }
-                    Sleep(100);
+                    Sleep(10); // Responsive input
                 }
             }
 
@@ -654,12 +695,22 @@ int main() {
 
             static bool ratsWereVisible = false;
 
-            // Rat system
+            // --- CAT SYSTEM: Calculate total cats ---
+            totalCats = milkPurchased + (milkPurchased / 9);
+
+            // --- RAT SYSTEM with CATS and CATNIP ---
             if (totalPies >= RAT_THRESHOLD) {
                 double progress = std::min((double)totalPies / 1000000.0, 1.0);
                 double exponent = 1.01 + 0.7 * pow(progress, 2);
                 totalRats = static_cast<int>(3 * pow((double)totalPies / RAT_THRESHOLD, exponent));
                 if (totalRats > RAT_MAX) totalRats = RAT_MAX;
+
+                // Cats eat rats before rats eat pies
+                int ratsEatenPerCat = 2 + int(2 * catnipLevel / 100.0f + 0.5f); // 2 base, +1% per catnip star (rounded)
+                int totalRatsEaten = totalCats * ratsEatenPerCat;
+                if (totalRatsEaten > totalRats) totalRatsEaten = totalRats;
+                totalRats -= totalRatsEaten;
+                if (totalRats < 0) totalRats = 0;
 
                 double endgameFactor = pow(progress, 3);
                 float singleRatEatRate = RAT_EAT_RATE + (0.005f + 0.025f * endgameFactor) * piesPerSecond;
@@ -702,7 +753,7 @@ int main() {
             renderFrame(deltaTime);
 
             Sleep(33); // ~30 FPS
-        }
+        } while (!goalAchieved && totalPies < 1000000);
 
         if (totalPies >= 1000000) {
             showCelebration();
