@@ -27,7 +27,7 @@ bool factoriesVisible = false;
 // ========================
 std::string announcement = "";  // Current announcement message
 float announcementTimer = 0.0f; // How long to show the message
-const float ANNOUNCEMENT_DURATION = 3.0f; // Show for 3 seconds
+const float ANNOUNCEMENT_DURATION = 6.0f; // Show for 5 seconds
 
 // ========================
 // UPGRADE SYSTEM
@@ -114,6 +114,16 @@ void setCursorPos(int x, int y) {
     SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
 }
 
+void showUnlockMessage(const std::string& message) {
+    system("cls");
+    setCursorPos(0, 0);
+    std::cout << "=== UNLOCKED ===\n\n";
+    std::cout << message << "\n\n";
+    std::cout << "Press any key to continue...";
+    _getch();
+    system("cls");
+}
+
 // ========================
 // INPUT HANDLING
 // ========================
@@ -140,6 +150,7 @@ void buyGrandma() {
         grandmas++;
         piesPerSecond += 1;
         if (upgrades[0].purchased) piesPerSecond += 1;
+        showUnlockMessage("Grandma purchased!\n\nTotal Grandmas: " + std::to_string(grandmas));
     }
 }
 
@@ -150,6 +161,7 @@ void buyBakery() {
         bakeries++;
         piesPerSecond += 5;
         if (upgrades[1].purchased) piesPerSecond += 10;
+        showUnlockMessage("Bakery purchased!\n\nTotal Bakeries: " + std::to_string(bakeries));
     }
 }
 
@@ -160,6 +172,7 @@ void buyFactory() {
         factories++;
         piesPerSecond += 20;
         if (upgrades[2].purchased) piesPerSecond += 60;
+        showUnlockMessage("Factory purchased!\n\nTotal Factories: " + std::to_string(factories));
     }
 }
 
@@ -229,23 +242,55 @@ void renderFrame(float deltaTime) {
     // Unlock logic + announcement
     if (!grandmasVisible && totalPies >= 10) {
         grandmasVisible = true;
-        announcement = "New! Grandmas - Bake 1 pie/sec (Cost: 10 pies)";
+        // Clear screen and show unlock message
+        system("cls");
+        setCursorPos(0, 0);
+        std::cout << "=== UNLOCKED ===\n\n";
+        std::cout << "New Building: Grandmas\n\nBake 1 pie per second\nCost: 10 pies\n\n";
+        std::cout << "Press any key to continue...";
+        _getch();
+        system("cls");
+        announcement = "Grandmas unlocked! Press G to buy (Cost: 10 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
     if (!bakeriesVisible && totalPies >= 50) {
         bakeriesVisible = true;
-        announcement = "New! Bakeries - Bake 5 pies/sec (Cost: 50 pies)";
+        system("cls");
+        setCursorPos(0, 0);
+        std::cout << "=== UNLOCKED ===\n\n";
+        std::cout << "New Building: Bakeries\n\nBake 5 pies per second\nCost: 50 pies\n\n";
+        std::cout << "Press any key to continue...";
+        _getch();
+        system("cls");
+        announcement = "Bakeries unlocked! Press B to buy (Cost: 50 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
     if (!factoriesVisible && totalPies >= 200) {
         factoriesVisible = true;
-        announcement = "New! Factories - Bake 20 pies/sec (Cost: 200 pies)";
+        system("cls");
+        setCursorPos(0, 0);
+        std::cout << "=== UNLOCKED ===\n\n";
+        std::cout << "New Building: Factories\n\nBake 20 pies per second\nCost: 200 pies\n\n";
+        std::cout << "Press any key to continue...";
+        _getch();
+        system("cls");
+        announcement = "Factories unlocked! Press F to buy (Cost: 200 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
 
     for (auto& upgrade : upgrades) {
         if (!upgrade.visible && totalPies >= upgrade.cost / 2) {
             upgrade.visible = true;
+            // Clear screen and show unlock message for upgrade
+            system("cls");
+            setCursorPos(0, 0);
+            std::cout << "=== UNLOCKED ===\n\n";
+            std::cout << "New Upgrade Available: " << upgrade.name << "\n\n";
+            std::cout << "Cost: " << upgrade.cost << " pies\n";
+            std::cout << "Press " << (&upgrade - &upgrades[0] + 1) << " to buy\n\n";
+            std::cout << "Press any key to continue...";
+            _getch();
+            system("cls");
             announcement = "Upgrade Available! " + upgrade.name + " (" + std::to_string(upgrade.cost) + " pies)";
             announcementTimer = ANNOUNCEMENT_DURATION;
         }
@@ -339,6 +384,8 @@ int main() {
                     totalPies -= upgrades[i].cost;
                     upgrades[i].purchased = true;
                     upgrades[i].effect();
+                    showUnlockMessage("Upgrade Purchased: " + upgrades[i].name + 
+                                     "\n\nEffect applied!");
                 }
             }
 
