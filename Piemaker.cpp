@@ -212,6 +212,20 @@ std::vector<std::string> screenBuffer(SCREEN_HEIGHT);
 void buildFrame() {
     for (auto& line : screenBuffer) line.clear();
 
+    // Check for unlocks
+    if (!showGrandmas && totalPies >= 10) {
+        showGrandmas = true;
+        screenBuffer[18] = "A million sounds like a lot... here's a Grandma to help!";
+    }
+    if (!showBakeries && totalPies >= 100) {
+        showBakeries = true;
+        screenBuffer[19] = "Bakeries unlocked! These can produce more pies!";
+    }
+    if (!showFactories && totalPies >= 500) {
+        showFactories = true;
+        screenBuffer[20] = "Factories now available - mass production time!";
+    }
+
     // Main UI
     screenBuffer[0] = "=== PIE MAKER IDLE ===";
     screenBuffer[1] = "Goal: Bake 1,000,000 pies!";
@@ -263,7 +277,8 @@ void buildFrame() {
 }
 
 void renderFrame() {
-    setCursorPos(0, 0); // <-- This is the only fix you need!
+    system("cls"); // Clear the console before rendering
+    setCursorPos(0, 0); // Ensure drawing starts at the top
     for (const auto& line : screenBuffer) {
         std::cout << line << std::string(80 - line.length(), ' ') << "\n";
     }
