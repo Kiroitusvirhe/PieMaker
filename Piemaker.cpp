@@ -22,6 +22,23 @@ float pendingPies = 0.0f;
 bool goalAchieved = false;
 bool prestigeUnlocked = false;
 int piesBakedThisRun = 0;
+bool prestigeHintShown = false; // <-- Add this line here
+bool forceClearScreen = false;  // <-- Add this line
+
+// ========================
+// INTRO SEQUENCE VARIABLES
+// ========================
+bool inIntro = true;
+int introPies = 1;
+int introSpacePresses = 0;
+int introAnnouncementStep = 0;
+std::string introAnnouncement = "";
+float introAnnouncementTimer = 0.0f;
+const float INTRO_ANNOUNCEMENT_DURATION = 4.0f;
+bool introUnlockAvailable = false;
+bool introBuildingsUnlocked = false;
+bool introClearedAfterFirstSpace = false; // Add this line
+
 
 // ========================
 // PRESTIGE SHOP VARIABLES
@@ -67,6 +84,7 @@ bool factoriesVisible = false;
 std::string announcement = "";
 float announcementTimer = 0.0f;
 const float ANNOUNCEMENT_DURATION = 6.0f;
+std::string lastAnnouncement = ""; // <-- Move this here (global scope)
 
 // ========================
 // UPGRADE SYSTEM
@@ -158,9 +176,9 @@ std::vector<std::string> ratArt = {
 };
 
 std::vector<std::string> catArt = {
-    "      |\\_/|",
-    "      ( o.o )",
-    "       > ^ <"
+    "      |\\_/|      ",
+    "      ( o.o )    ",
+    "       > ^ <     "
 };
 
 // ========================
@@ -224,7 +242,7 @@ void buyBakery() {
         totalPies -= cost;
         bakeries++;
         piesPerSecond += 5 + (5 * boostPercent / 100);
-        if (upgrades[1].purchased) piesPerSecond += 10 + (10 * boostPercent / 100);
+       
     }
 }
 
@@ -278,6 +296,47 @@ void initializePrestigeShop() {
     };
 }
 
+// ========================
+// INTRO RENDER FUNCTION
+// ========================
+void renderIntro() {
+    const int CONSOLE_WIDTH = 80;
+    auto padLine = [&](const std::string& s) -> std::string {
+        if (s.length() < CONSOLE_WIDTH)
+            return s + std::string(CONSOLE_WIDTH - s.length(), ' ');
+        else
+            return s.substr(0, CONSOLE_WIDTH);
+    };
+
+    std::string frame;
+    frame += padLine("=== PIE MAKER IDLE ===") + "\n";
+    frame += padLine("Goal: Bake 1,000,000 pies!") + "\n";
+    frame += padLine("Pies: " + std::to_string(introPies)) + "\n";
+    frame += "\n";
+    frame += padLine("[SPACE] Bake a pie!") + "\n";
+    frame += "\n";
+    if (introUnlockAvailable) {
+        frame += padLine("[U] Unlock buildings (Cost: 50 pies)") + "\n";
+        frame += "\n"; // <-- Add an extra empty line here
+    }
+
+    setCursorPos(0, 0);
+    std::cout << frame;
+    if (!introAnnouncement.empty()) {
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 14); // Yellow
+        std::cout << padLine(introAnnouncement) << std::endl;
+        SetConsoleTextAttribute(hConsole, 7);  // Reset to default
+    }
+    else {
+        std::cout << std::endl;
+    }
+    std::cout << std::flush;
+}
+
+// ========================
+// PRESTIGE SHOP RENDER
+// ========================
 void renderPrestigeShop() {
     const int CONSOLE_WIDTH = 80;
     std::string frame;
@@ -323,6 +382,9 @@ void resetGameState() {
         {"Robot Bakers", 5000, false, false, [] { piesPerSecond += factories * 3; }}
     };
     piesBakedThisRun = 0;
+    announcement = "";
+    announcementTimer = 0.0f;
+    prestigeHintShown = false; // Reset the prestige hint for each new run
 }
 
 // ========================
@@ -418,11 +480,17 @@ void renderFrame(float deltaTime) {
         grandmasVisible = true;
         system("cls");
         setCursorPos(0, 0);
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 14); // Yellow
         std::cout << "=== UNLOCKED ===\n\n";
-        std::cout << "New Building: Grandmas\n\nBake 1 pie per second\nCost: 10 pies\n\n";
+        std::cout << "New Building: Grandmas\n\n";
+        std::cout << "Grandmas bake pies with love (and arthritis)!\n";
+        std::cout << "Bake 1 pie per second\nCost: 10 pies\n\n";
+        SetConsoleTextAttribute(hConsole, 7); // Reset
         std::cout << "Press any key to continue...";
         _getch();
         system("cls");
+        lastAnnouncement = ""; // <-- Reset here
         announcement = "Grandmas unlocked! Press G to buy (Cost: 10 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
@@ -430,11 +498,17 @@ void renderFrame(float deltaTime) {
         bakeriesVisible = true;
         system("cls");
         setCursorPos(0, 0);
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 14); // Yellow
         std::cout << "=== UNLOCKED ===\n\n";
-        std::cout << "New Building: Bakeries\n\nBake 5 pies per second\nCost: 50 pies\n\n";
+        std::cout << "New Building: Bakeries\n\n";
+        std::cout << "Bakeries: Now with 100% more gluten and 200% more efficiency!\n";
+        std::cout << "Bake 5 pies per second\nCost: 50 pies\n\n";
+        SetConsoleTextAttribute(hConsole, 7); // Reset
         std::cout << "Press any key to continue...";
         _getch();
         system("cls");
+        lastAnnouncement = ""; // <-- Reset here
         announcement = "Bakeries unlocked! Press B to buy (Cost: 50 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
@@ -442,11 +516,17 @@ void renderFrame(float deltaTime) {
         factoriesVisible = true;
         system("cls");
         setCursorPos(0, 0);
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 14); // Yellow
         std::cout << "=== UNLOCKED ===\n\n";
-        std::cout << "New Building: Factories\n\nBake 20 pies per second\nCost: 200 pies\n\n";
+        std::cout << "New Building: Factories\n\n";
+        std::cout << "Factories: For when you want more pies than friends.\n";
+        std::cout << "Bake 20 pies per second\nCost: 200 pies\n\n";
+        SetConsoleTextAttribute(hConsole, 7); // Reset
         std::cout << "Press any key to continue...";
         _getch();
         system("cls");
+        lastAnnouncement = ""; // <-- Reset here
         announcement = "Factories unlocked! Press F to buy (Cost: 200 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
@@ -456,21 +536,20 @@ void renderFrame(float deltaTime) {
             upgrade.visible = true;
             system("cls");
             setCursorPos(0, 0);
+            HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+            SetConsoleTextAttribute(hConsole, 14); // Yellow
             std::cout << "=== UNLOCKED ===\n\n";
             std::cout << "New Upgrade Available: " << upgrade.name << "\n\n";
             std::cout << "Cost: " << upgrade.cost << " pies\n";
             std::cout << "Press " << (&upgrade - &upgrades[0] + 1) << " to buy\n\n";
+            SetConsoleTextAttribute(hConsole, 7); // Reset
             std::cout << "Press any key to continue...";
             _getch();
             system("cls");
+            lastAnnouncement = ""; // <-- Reset here
             announcement = "Upgrade Available! " + upgrade.name + " (" + std::to_string(upgrade.cost) + " pies)";
             announcementTimer = ANNOUNCEMENT_DURATION;
         }
-    }
-
-    if (announcementTimer > 0) {
-        announcementTimer -= deltaTime;
-        if (announcementTimer <= 0) announcement = "";
     }
 
     // Helper lambda to pad lines to fixed width
@@ -578,11 +657,21 @@ void renderFrame(float deltaTime) {
     }
 
     if (!announcement.empty()) {
-        frame += "\n" + padLine(announcement) + "\n";
+        if (announcement != lastAnnouncement) {
+            system("cls"); // Only clear when the announcement changes
+            lastAnnouncement = announcement;
+        }
+        setCursorPos(0, 0);
+        std::cout << frame;
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 14); // Yellow
+        std::cout << "\n" << padLine(announcement) << "\n";
+        SetConsoleTextAttribute(hConsole, 7);  // Reset to default
+        return;
     } else {
+        lastAnnouncement = ""; // Reset when no announcement
         frame += "\n" + std::string(CONSOLE_WIDTH, ' ') + "\n";
     }
-
     setCursorPos(0, 0);
     std::cout << frame << std::flush;
 }
@@ -598,12 +687,101 @@ int main() {
     do {
         resetGameState();
         system("cls");
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         std::cout << "=== PIE MAKER IDLE ===\n\n";
-        std::cout << "Your goal: Bake ONE MILLION PIES!\n";
+        std::cout << "Your goal: Bake ONE MILLION PIES!\n\n";
+        SetConsoleTextAttribute(hConsole, 14); // Yellow
         std::cout << "Start by pressing SPACE to bake your first pie.\n\n";
+        SetConsoleTextAttribute(hConsole, 7);  // Reset to default
         _getch();
 
+        // --- Intro sequence ---
+        inIntro = true;
+        introPies = 1;
+        introSpacePresses = 0;
+        introAnnouncementStep = 0;
+        introAnnouncement = "";
+        introAnnouncementTimer = 0.0f;
+        introUnlockAvailable = false;
+        introBuildingsUnlocked = false;
+        introClearedAfterFirstSpace = false;
+
         auto lastTime = std::chrono::steady_clock::now();
+
+        while (inIntro) {
+            if (keyPressed(VK_SPACE)) {
+                // Clear the screen after the first spacebar press only
+                if (!introClearedAfterFirstSpace) {
+                    system("cls");
+                    introClearedAfterFirstSpace = true;
+                    introPies = 1;           // Reset pies to 1 after first clear
+                    introSpacePresses = 1;   // Also reset presses to 1 for consistency
+                } else {
+                    introPies++;
+                    introSpacePresses++;
+                }
+                showPressedPie = true;
+                pieAnimTimer = 5;
+            }
+
+            // Announcements at milestones
+            if (introSpacePresses >= 10 && introAnnouncementStep < 1) {
+                introAnnouncement = "You've boke 10 already!";
+                introAnnouncementTimer = INTRO_ANNOUNCEMENT_DURATION;
+                introAnnouncementStep = 1;
+            }
+            if (introSpacePresses >= 20 && introAnnouncementStep < 2) {
+                introAnnouncement = "Only 9,999,980 more to go!";
+                introAnnouncementTimer = INTRO_ANNOUNCEMENT_DURATION;
+                introAnnouncementStep = 2;
+            }
+            if (introSpacePresses >= 30 && introAnnouncementStep < 3) {
+                introAnnouncement = "Isn't this fun?";
+                introAnnouncementTimer = INTRO_ANNOUNCEMENT_DURATION;
+                introAnnouncementStep = 3;
+            }
+            if (introSpacePresses >= 40 && introAnnouncementStep < 4) {
+                introAnnouncement = "Don't worry, your spacebar can handle a million presses... probably.";
+                introAnnouncementTimer = INTRO_ANNOUNCEMENT_DURATION;
+                introAnnouncementStep = 4;
+            }
+            if (introSpacePresses >= 50 && introAnnouncementStep < 5) {
+                introAnnouncement = "Fine, buy some grandmas to help you.";
+                introAnnouncementTimer = INTRO_ANNOUNCEMENT_DURATION;
+                introAnnouncementStep = 5;
+                introUnlockAvailable = true;
+                system("cls"); // Clear the screen when the unlock line appears
+            }
+
+            // Unlock buildings shop option
+            if (introUnlockAvailable && keyPressed('U') && introPies >= 50) {
+                introPies -= 50;
+                introBuildingsUnlocked = true;
+                inIntro = false;
+                system("cls");
+            }
+
+            // Timer for announcement
+            auto now = std::chrono::steady_clock::now();
+            float deltaTime = std::chrono::duration<float>(now - lastTime).count();
+            lastTime = now;
+            if (introAnnouncementTimer > 0) {
+                introAnnouncementTimer -= deltaTime;
+                if (introAnnouncementTimer <= 0) {
+                    introAnnouncement = "";
+                }
+            }
+
+            renderIntro();
+
+            Sleep(33);
+        }
+
+        // After the intro, transfer pies and start the main game
+        totalPies = introPies;
+        piesBakedThisRun = introPies;
+
+        auto lastTimeGame = std::chrono::steady_clock::now();
 
         do {
             // Input
@@ -625,7 +803,7 @@ int main() {
                     totalPies -= upgrades[i].cost;
                     upgrades[i].purchased = true;
                     upgrades[i].effect();
-                    showUnlockMessage("Upgrade Purchased: " + upgrades[i].name + 
+                    showUnlockMessage("Upgrade Purchased: " + upgrades[i].name +
                                      "\n\nEffect applied!");
                 }
             }
@@ -663,6 +841,7 @@ int main() {
                         if (choice == '0') {
                             inPrestigeShop = false;
                             system("cls");
+                            forceClearScreen = true; // <-- Add this line
                         } else if (choice >= '1' && choice <= '0' + prestigeUpgrades.size()) {
                             int index = choice - '1';
                             if (index >= 0 && index < prestigeUpgrades.size() && prestigeUpgrades[index].isVisible()) {
@@ -681,8 +860,8 @@ int main() {
 
             // Timing
             auto now = std::chrono::steady_clock::now();
-            float deltaTime = std::chrono::duration<float>(now - lastTime).count();
-            lastTime = now;
+            float deltaTime = std::chrono::duration<float>(now - lastTimeGame).count();
+            lastTimeGame = now;
 
             // Apply pies per second
             pendingPies += piesPerSecond * deltaTime;
@@ -724,11 +903,15 @@ int main() {
 
                 if (!ratsWereVisible) {
                     system("cls");
+                    announcement = "";           // <-- Add this line
+                    announcementTimer = 0.0f;    // <-- Add this line
                     ratsWereVisible = true;
                 }
             } else {
                 if (ratsWereVisible) {
                     system("cls");
+                    announcement = "";           // <-- Add this line
+                    announcementTimer = 0.0f;    // <-- Add this line
                     ratsWereVisible = false;
                 }
                 totalRats = 0;
@@ -749,6 +932,25 @@ int main() {
                 idleTimer = 0.0f;
             }
 
+            // --- PRESTIGE HINT ANNOUNCEMENT ---
+            if (!prestigeHintShown && piesBakedThisRun >= 500000) {
+                announcement = "Tip: If progress slows down, try PRESTIGE (press R) for permanent upgrades!";
+                announcementTimer = ANNOUNCEMENT_DURATION;
+                prestigeHintShown = true;
+            }
+
+            if (announcementTimer > 0) {
+                announcementTimer -= deltaTime;
+                if (announcementTimer <= 0) {
+                    announcement = "";
+                }
+            }
+
+            // Before rendering each frame:
+            if (forceClearScreen) {
+                system("cls");
+                forceClearScreen = false;
+            }
             // Render
             renderFrame(deltaTime);
 
