@@ -72,6 +72,11 @@ float ratsEatingSingle = 0.0f;
 const int RAT_THRESHOLD = 50000;
 const float RAT_EAT_RATE = 1.0f;
 const int RAT_MAX = 999999;
+int ratsBeingEaten = 0;      // Track rats eaten by cats
+float catsEfficiency = 0.0f; // Track cats' hunting efficiency
+
+bool ratsJustAppeared = false;
+bool ratsJustDisappeared = false;
 
 // Visibility tracking
 bool grandmasVisible = false;
@@ -169,16 +174,10 @@ int idleFrame = 0;
 float idleTimer = 0.0f;
 
 std::vector<std::string> ratArt = {
-    "                   .-------.",
-    "              (\\./)     \\.......-",
+    "                        .--.",
+    "               (\\./)     \\.......-",
     "              >' '<  (__.'\"\"\"\"BP",
     "              \" ` \" \""
-};
-
-std::vector<std::string> catArt = {
-    "      |\\_/|      ",
-    "      ( o.o )    ",
-    "       > ^ <     "
 };
 
 // ========================
@@ -270,7 +269,7 @@ void initializePrestigeShop() {
         },
         {
             "Milk",
-            []() { return 10 + (milkPurchased * 5); },
+            []() { return 10 + (milkPurchased * 2); },
             []() { milkPurchased++; },
             []() { return true; },
             []() { 
@@ -475,58 +474,76 @@ void renderFrame(float deltaTime) {
     const int CONSOLE_WIDTH = 80;
     std::string frame;
 
+    static bool lastRatState = false;
+    if (lastRatState != (totalRats > 0)) {
+        system("cls");
+        lastRatState = (totalRats > 0);
+        forceClearScreen = false;
+    }
+
+    bool shouldClearScreen = ratsJustAppeared || ratsJustDisappeared || forceClearScreen;
+    if (shouldClearScreen) {
+        system("cls");
+        ratsJustAppeared = false;
+        ratsJustDisappeared = false;
+        forceClearScreen = false;
+        lastAnnouncement = "";
+    }
+
     // Unlock logic + announcement
     if (!grandmasVisible && totalPies >= 10) {
         grandmasVisible = true;
         system("cls");
         setCursorPos(0, 0);
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, 14); // Yellow
+        SetConsoleTextAttribute(hConsole, 14);
         std::cout << "=== UNLOCKED ===\n\n";
         std::cout << "New Building: Grandmas\n\n";
         std::cout << "Grandmas bake pies with love (and arthritis)!\n";
         std::cout << "Bake 1 pie per second\nCost: 10 pies\n\n";
-        SetConsoleTextAttribute(hConsole, 7); // Reset
+        SetConsoleTextAttribute(hConsole, 7);
         std::cout << "Press any key to continue...";
         _getch();
         system("cls");
-        lastAnnouncement = ""; // <-- Reset here
+        lastAnnouncement = "";
         announcement = "Grandmas unlocked! Press G to buy (Cost: 10 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
+
     if (!bakeriesVisible && totalPies >= 50) {
         bakeriesVisible = true;
         system("cls");
         setCursorPos(0, 0);
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, 14); // Yellow
+        SetConsoleTextAttribute(hConsole, 14);
         std::cout << "=== UNLOCKED ===\n\n";
         std::cout << "New Building: Bakeries\n\n";
         std::cout << "Bakeries: Now with 100% more gluten and 200% more efficiency!\n";
         std::cout << "Bake 5 pies per second\nCost: 50 pies\n\n";
-        SetConsoleTextAttribute(hConsole, 7); // Reset
+        SetConsoleTextAttribute(hConsole, 7);
         std::cout << "Press any key to continue...";
         _getch();
         system("cls");
-        lastAnnouncement = ""; // <-- Reset here
+        lastAnnouncement = "";
         announcement = "Bakeries unlocked! Press B to buy (Cost: 50 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
+
     if (!factoriesVisible && totalPies >= 200) {
         factoriesVisible = true;
         system("cls");
         setCursorPos(0, 0);
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, 14); // Yellow
+        SetConsoleTextAttribute(hConsole, 14);
         std::cout << "=== UNLOCKED ===\n\n";
         std::cout << "New Building: Factories\n\n";
         std::cout << "Factories: For when you want more pies than friends.\n";
         std::cout << "Bake 20 pies per second\nCost: 200 pies\n\n";
-        SetConsoleTextAttribute(hConsole, 7); // Reset
+        SetConsoleTextAttribute(hConsole, 7);
         std::cout << "Press any key to continue...";
         _getch();
         system("cls");
-        lastAnnouncement = ""; // <-- Reset here
+        lastAnnouncement = "";
         announcement = "Factories unlocked! Press F to buy (Cost: 200 pies)";
         announcementTimer = ANNOUNCEMENT_DURATION;
     }
@@ -537,16 +554,16 @@ void renderFrame(float deltaTime) {
             system("cls");
             setCursorPos(0, 0);
             HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-            SetConsoleTextAttribute(hConsole, 14); // Yellow
+            SetConsoleTextAttribute(hConsole, 14);
             std::cout << "=== UNLOCKED ===\n\n";
             std::cout << "New Upgrade Available: " << upgrade.name << "\n\n";
             std::cout << "Cost: " << upgrade.cost << " pies\n";
             std::cout << "Press " << (&upgrade - &upgrades[0] + 1) << " to buy\n\n";
-            SetConsoleTextAttribute(hConsole, 7); // Reset
+            SetConsoleTextAttribute(hConsole, 7);
             std::cout << "Press any key to continue...";
             _getch();
             system("cls");
-            lastAnnouncement = ""; // <-- Reset here
+            lastAnnouncement = "";
             announcement = "Upgrade Available! " + upgrade.name + " (" + std::to_string(upgrade.cost) + " pies)";
             announcementTimer = ANNOUNCEMENT_DURATION;
         }
@@ -581,11 +598,16 @@ void renderFrame(float deltaTime) {
     if (milkPurchased > 0) {
         frame += padLine("Milk: " + std::to_string(milkPurchased)) + "\n";
     }
+    // Cat status display - put this right after milk display
+    if (totalCats > 0) {
+    frame += padLine("Cats: " + std::to_string(totalCats) + 
+             " (Eating " + std::to_string(ratsBeingEaten) + 
+             " rats/sec)") + "\n";
+    } else {
+        frame += padLine("Cats: " + std::to_string(totalCats)) + "\n";
+    }
     if (catnipLevel > 0) {
         frame += padLine("Catnip: " + std::to_string(catnipLevel)) + "\n";
-    }
-    if (totalCats > 0) {
-        frame += padLine("Cats: " + std::to_string(totalCats)) + "\n";
     }
     if (hasGoldenSword) {
         frame += padLine("Golden Sword: OWNED") + "\n";
@@ -627,28 +649,48 @@ void renderFrame(float deltaTime) {
         size_t steamLines = steamToShow.size();
         size_t pieLines = pieToShow.size();
         size_t ratLines = ratArt.size();
-        size_t catLines = catArt.size();
-        int gap = 2;
+        const int gap = 2; // Space between elements
 
-        for (size_t i = 0; i < steamLines; ++i) {
+        // Draw steam
+        for (size_t i = 0; i < steamToShow.size(); ++i) {
             frame += padLine(steamToShow[i]) + "\n";
         }
-        for (size_t i = 0; i < std::max(pieLines, std::max(ratLines, catLines)); ++i) {
-            std::string pieLine = (i < pieLines) ? pieToShow[i] : std::string(pieToShow[0].size(), ' ');
-            std::string ratLine = (i < ratLines && totalRats > 0) ? ratArt[i] : "";
-            std::string catLine = (i < catLines && totalCats > 0) ? catArt[i] : "";
-            frame += padLine(pieLine + std::string(gap, ' ') + ratLine + std::string(gap, ' ') + catLine) + "\n";
+
+        // Calculate widths
+        const int pieWidth = pieToShow.empty() ? 0 : pieToShow[0].size();
+        const int ratWidth = ratArt.empty() ? 0 : ratArt[0].size();
+        int maxLines = std::max(pieToShow.size(), ratArt.size());
+
+        // Draw combined ASCII art (pie | rat)
+        for (int i = 0; i < maxLines; ++i) {
+            std::string line;
+
+            // Pie
+            if (i < pieToShow.size()) {
+                line += pieToShow[i];
+            } else {
+                line += std::string(pieWidth, ' ');
+            }
+
+            // Rat (column always reserved if rats exist)
+            if (totalRats > 0) {
+                line += std::string(gap, ' ');
+                if (i < ratArt.size()) {
+                    line += ratArt[i];
+                } else {
+                    line += std::string(ratWidth, ' ');
+                }
+            }
+
+            frame += padLine(line) + "\n";
         }
         frame += padLine("     Riitta Rasimus") + "\n";
+
+        // Info message for rats only
         if (totalRats > 0) {
+            int ratCol = pieWidth + gap + 10; 
             std::string ratMsg = std::to_string(totalRats) + " rats are stealing your pies!";
-            int pieAndGapWidth = (int)pieToShow[0].size() + gap + 19;
-            frame += padLine(std::string(pieAndGapWidth, ' ') + ratMsg) + "\n";
-        }
-        if (totalCats > 0) {
-            std::string catMsg = std::to_string(totalCats) + " cats are chasing rats!";
-            int pieAndGapWidth = (int)pieToShow[0].size() + gap + 19 + gap + 13;
-            frame += padLine(std::string(pieAndGapWidth, ' ') + catMsg) + "\n";
+            frame += padLine(std::string(ratCol, ' ') + ratMsg) + "\n";
         }
     } else {
         for (const auto& line : steamToShow) frame += padLine(line) + "\n";
@@ -656,24 +698,16 @@ void renderFrame(float deltaTime) {
         frame += padLine("     Riitta Rasimus") + "\n";
     }
 
-    if (!announcement.empty()) {
-        if (announcement != lastAnnouncement) {
-            system("cls"); // Only clear when the announcement changes
-            lastAnnouncement = announcement;
-        }
-        setCursorPos(0, 0);
-        std::cout << frame;
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, 14); // Yellow
-        std::cout << "\n" << padLine(announcement) << "\n";
-        SetConsoleTextAttribute(hConsole, 7);  // Reset to default
-        return;
-    } else {
-        lastAnnouncement = ""; // Reset when no announcement
-        frame += "\n" + std::string(CONSOLE_WIDTH, ' ') + "\n";
-    }
     setCursorPos(0, 0);
-    std::cout << frame << std::flush;
+std::cout << frame;
+if (!announcement.empty()) {
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(hConsole, 14);
+    std::cout << "\n" << padLine(announcement) << "\n";
+    SetConsoleTextAttribute(hConsole, 7);
+}
+std::cout << std::flush;
+    setCursorPos(0, 0);
 }
 
 // ========================
@@ -710,12 +744,11 @@ int main() {
 
         while (inIntro) {
             if (keyPressed(VK_SPACE)) {
-                // Clear the screen after the first spacebar press only
                 if (!introClearedAfterFirstSpace) {
                     system("cls");
                     introClearedAfterFirstSpace = true;
-                    introPies = 1;           // Reset pies to 1 after first clear
-                    introSpacePresses = 1;   // Also reset presses to 1 for consistency
+                    introPies = 1;
+                    introSpacePresses = 1;
                 } else {
                     introPies++;
                     introSpacePresses++;
@@ -750,7 +783,7 @@ int main() {
                 introAnnouncementTimer = INTRO_ANNOUNCEMENT_DURATION;
                 introAnnouncementStep = 5;
                 introUnlockAvailable = true;
-                system("cls"); // Clear the screen when the unlock line appears
+                system("cls");
             }
 
             // Unlock buildings shop option
@@ -818,6 +851,10 @@ int main() {
                 piesBakedThisRun += 50000;
             }
 
+            if (keyPressed('C')) {
+                system("cls");
+            }
+
             // Unlock prestige permanently once reached
             if (!prestigeUnlocked && piesBakedThisRun >= 1000) {
                 prestigeUnlocked = true;
@@ -828,20 +865,19 @@ int main() {
                 prestigeStars += sqrt(piesBakedThisRun / 1000.0f);
                 resetGameState();
                 inPrestigeShop = true;
-                system("cls"); // Clear the screen before entering the prestige shop
+                system("cls");
 
                 while (inPrestigeShop) {
                     renderPrestigeShop();
 
                     if (_kbhit()) {
                         char choice = _getch();
-                        // Flush any extra buffered input to avoid laggy/stuck keys
                         while (_kbhit()) _getch();
 
                         if (choice == '0') {
                             inPrestigeShop = false;
                             system("cls");
-                            forceClearScreen = true; // <-- Add this line
+                            forceClearScreen = true;
                         } else if (choice >= '1' && choice <= '0' + prestigeUpgrades.size()) {
                             int index = choice - '1';
                             if (index >= 0 && index < prestigeUpgrades.size() && prestigeUpgrades[index].isVisible()) {
@@ -849,12 +885,11 @@ int main() {
                                 if (prestigeStars >= cost) {
                                     prestigeStars -= cost;
                                     prestigeUpgrades[index].effect();
-                                    // system("cls"); // Removed for smoother experience
                                 }
                             }
                         }
                     }
-                    Sleep(10); // Responsive input
+                    Sleep(10);
                 }
             }
 
@@ -885,33 +920,30 @@ int main() {
                 if (totalRats > RAT_MAX) totalRats = RAT_MAX;
 
                 // Cats eat rats before rats eat pies
-                int ratsEatenPerCat = 2 + int(2 * catnipLevel / 100.0f + 0.5f); // 2 base, +1% per catnip star (rounded)
+                int ratsEatenPerCat = 3 + int(3 * catnipLevel / 100.0f + 0.5f);
                 int totalRatsEaten = totalCats * ratsEatenPerCat;
                 if (totalRatsEaten > totalRats) totalRatsEaten = totalRats;
                 totalRats -= totalRatsEaten;
                 if (totalRats < 0) totalRats = 0;
-
+                
+                int ratsBeingEaten = totalRatsEaten;  // Track how many rats cats are eating
+                float catsEfficiency = (totalCats > 0) ? (float)ratsEatenPerCat : 0.0f;  // Rats per cat
                 double endgameFactor = pow(progress, 3);
                 float singleRatEatRate = RAT_EAT_RATE + (0.005f + 0.025f * endgameFactor) * piesPerSecond;
 
                 int ratsEatingPerSecond = static_cast<int>(totalRats * singleRatEatRate);
                 int ratsEatingThisFrame = static_cast<int>(std::min(ratsEatingPerSecond * deltaTime, (float)totalPies));
                 totalPies -= ratsEatingThisFrame;
-
                 ratsEating = ratsEatingPerSecond;
                 ratsEatingSingle = singleRatEatRate;
 
                 if (!ratsWereVisible) {
-                    system("cls");
-                    announcement = "";           // <-- Add this line
-                    announcementTimer = 0.0f;    // <-- Add this line
+                    ratsJustAppeared = true;
                     ratsWereVisible = true;
                 }
             } else {
                 if (ratsWereVisible) {
-                    system("cls");
-                    announcement = "";           // <-- Add this line
-                    announcementTimer = 0.0f;    // <-- Add this line
+                    ratsJustDisappeared = true;
                     ratsWereVisible = false;
                 }
                 totalRats = 0;
@@ -938,7 +970,6 @@ int main() {
                 announcementTimer = ANNOUNCEMENT_DURATION;
                 prestigeHintShown = true;
             }
-
             if (announcementTimer > 0) {
                 announcementTimer -= deltaTime;
                 if (announcementTimer <= 0) {
@@ -946,21 +977,19 @@ int main() {
                 }
             }
 
-            // Before rendering each frame:
             if (forceClearScreen) {
                 system("cls");
                 forceClearScreen = false;
             }
-            // Render
+
             renderFrame(deltaTime);
 
-            Sleep(33); // ~30 FPS
+            Sleep(33);
         } while (!goalAchieved && totalPies < 1000000);
 
         if (totalPies >= 1000000) {
             showCelebration();
         }
-
     } while (!goalAchieved);
 
     return 0;
