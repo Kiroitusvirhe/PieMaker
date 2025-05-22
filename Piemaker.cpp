@@ -10,7 +10,67 @@
 #include <locale>
 #include <cstdlib>
 #include <ctime>
-#include <memory> // For smart pointers
+#include <memory>
+
+
+
+class RatSystem {
+private:
+    int totalRats = 0;
+    int ratsEating = 0;
+    float ratsEatingSingle = 0.0f;
+    bool ratsWereVisible = false;
+    const int RAT_THRESHOLD = 50000;
+    const float RAT_EAT_RATE = 1.0f;
+    const int RAT_MAX = 999999;
+
+public:
+    void update(float deltaTime, int& totalPies, int piesPerSecond, int totalCats, int catnipLevel) {
+        if (totalPies >= RAT_THRESHOLD) {
+            double progress = std::min((double)totalPies / 1000000.0, 1.0);
+            double exponent = 1.01 + 0.7 * pow(progress, 2);
+            totalRats = static_cast<int>(3 * pow((double)totalPies / RAT_THRESHOLD, exponent));
+            if (totalRats > RAT_MAX) totalRats = RAT_MAX;
+
+            // Cats eat rats before rats eat pies
+            int ratsEatenPerCat = 3 + int(3 * pow(1.5, catnipLevel) / 100.0f);
+            int totalRatsEaten = totalCats * ratsEatenPerCat;
+            if (totalRatsEaten > totalRats) totalRatsEaten = totalRats;
+            totalRats -= totalRatsEaten;
+            if (totalRats < 0) totalRats = 0;
+
+            float singleRatEatRate = RAT_EAT_RATE + (0.005f + 0.025f * pow(progress, 3)) * piesPerSecond;
+            int ratsEatingPerSecond = static_cast<int>(totalRats * singleRatEatRate);
+            int ratsEatingThisFrame = static_cast<int>(std::min(ratsEatingPerSecond * deltaTime, (float)totalPies));
+            totalPies -= ratsEatingThisFrame;
+            ratsEating = ratsEatingPerSecond;
+            ratsEatingSingle = singleRatEatRate;
+        } else {
+            totalRats = 0;
+            ratsEating = 0;
+            ratsEatingSingle = 0;
+        }
+    }
+
+    void render(std::string& frame, const std::vector<std::string>& ratArt, int pieWidth, int gap) const {
+        if (totalRats > 0) {
+            for (const auto& line : ratArt) {
+                frame += line + "\n";
+            }
+            int ratCol = pieWidth + gap + 10;
+            std::string ratMsg = std::to_string(totalRats) + " rats are stealing your pies!";
+            frame += std::string(ratCol, ' ') + ratMsg + "\n";
+        }
+    }
+
+    int getTotalRats() const { return totalRats; }
+    int getRatsEating() const { return ratsEating; }
+    float getRatsEatingSingle() const { return ratsEatingSingle; }
+    bool areRatsVisible() const { return totalRats > 0; }
+    bool wereRatsVisible() const { return ratsWereVisible; }
+    void setRatsWereVisible(bool v) { ratsWereVisible = v; }
+};
+
 
 // ========================
 // GAME STATE VARIABLES
@@ -25,6 +85,7 @@ struct GameState {
     int piesBakedThisRun = 0;
     bool prestigeHintShown = false;
     bool forceClearScreen = false;
+    RatSystem ratSystem;
 };
 
 GameState game;
@@ -123,19 +184,6 @@ bool inPrestigeShop = false;
 // CAT SYSTEM VARIABLES
 // ========================
 int totalCats = 0;
-
-// ========================
-// RAT SYSTEM VARIABLES
-// ========================
-int totalRats = 0;
-int ratsEating = 0;
-float ratsEatingSingle = 0.0f;
-const int RAT_THRESHOLD = 50000;
-const float RAT_EAT_RATE = 1.0f;
-const int RAT_MAX = 999999;
-
-bool ratsJustAppeared = false;
-bool ratsJustDisappeared = false;
 
 // ========================
 // ASCII ART
@@ -415,6 +463,7 @@ std::string formatWithCommas(int value) {
 // ========================
 // GAME CLASSES
 // ========================
+
 class ShopItem {
 protected:
     bool wasVisible = false; // <-- Add this line
@@ -545,20 +594,7 @@ void renderFrame(float deltaTime) {
     const int CONSOLE_WIDTH = 80;
     std::string frame;
 
-    static bool lastRatState = false;
-    if (lastRatState != (totalRats > 0)) {
-        system("cls");
-        lastRatState = (totalRats > 0);
-        game.forceClearScreen = false;
-    }
-
-    bool shouldClearScreen = ratsJustAppeared || ratsJustDisappeared || game.forceClearScreen;
-    if (shouldClearScreen) {
-        system("cls");
-        ratsJustAppeared = false;
-        ratsJustDisappeared = false;
-        game.forceClearScreen = false;
-    }
+    // ...existing clear screen logic...
 
     // Helper lambda to pad lines to fixed width
     auto padLine = [&](const std::string& s) -> std::string {
@@ -573,9 +609,9 @@ void renderFrame(float deltaTime) {
     frame += padLine("Goal: Bake 1,000,000 pies!") + "\n";
     frame += padLine("Pies: " + formatWithCommas(game.totalPies)) + "\n";
 
-    if (totalRats > 0) {
+    if (game.ratSystem.getTotalRats() > 0) {
         frame += padLine("Per second: " + std::to_string(game.piesPerSecond) +
-            " (-" + std::to_string(ratsEating) + ")") + "\n";
+            " (-" + std::to_string(game.ratSystem.getRatsEating()) + ")") + "\n";
     } else {
         frame += padLine("Per second: " + std::to_string(game.piesPerSecond)) + "\n";
     }
@@ -590,7 +626,7 @@ void renderFrame(float deltaTime) {
         frame += padLine("Milk: " + std::to_string(prestigeShop.milkPurchased)) + "\n";
     }
     if (totalCats > 0 || prestigeShop.milkPurchased > 0) {
-    frame += padLine("Cats: " + std::to_string(totalCats)) + "\n";
+        frame += padLine("Cats: " + std::to_string(totalCats)) + "\n";
     }
     if (prestigeShop.catnipLevel > 0) {
         frame += padLine("Catnip: " + std::to_string(prestigeShop.catnipLevel)) + "\n";
@@ -599,15 +635,14 @@ void renderFrame(float deltaTime) {
         frame += padLine("Golden Sword: OWNED") + "\n";
     }
 
-    if (totalRats > 0) {
-        frame += padLine("Rats: " + std::to_string(totalRats) +
-            (ratsEatingSingle > 0 ? " (Each eating " + std::to_string((int)ratsEatingSingle) + " pies/sec)" : "")) + "\n\n";
+    if (game.ratSystem.getTotalRats() > 0) {
+        frame += padLine("Rats: " + std::to_string(game.ratSystem.getTotalRats()) +
+            (game.ratSystem.getRatsEatingSingle() > 0 ? " (Each eating " + std::to_string((int)game.ratSystem.getRatsEatingSingle()) + " pies/sec)" : "")) + "\n\n";
     } else {
         frame += "\n";
     }
 
     frame += padLine("[SPACE] Bake a pie!") + "\n\n";
-
     frame += "\n";
 
     if (game.prestigeUnlocked) {
@@ -617,7 +652,7 @@ void renderFrame(float deltaTime) {
 
     frame += "\n";
 
-     // Render shop items
+    // Render shop items
     int buildingCount = 3; // Number of buildings at the start of shopItems
     for (int i = 0; i < shopItems.size(); ++i) {
         // If the item is visible now, mark it as "was visible"
@@ -641,7 +676,7 @@ void renderFrame(float deltaTime) {
     std::vector<std::string> pieToShow = showPressedPie ? piePressed : pieIdle1;
 
     // Draw steam, then pie, then artist tag
-    if (totalRats > 0 || totalCats > 0) {
+    if (game.ratSystem.getTotalRats() > 0 || totalCats > 0) {
         size_t steamLines = steamToShow.size();
         size_t pieLines = pieToShow.size();
         size_t ratLines = ratArt.size();
@@ -669,7 +704,7 @@ void renderFrame(float deltaTime) {
             }
 
             // Rat (column always reserved if rats exist)
-            if (totalRats > 0) {
+            if (game.ratSystem.getTotalRats() > 0) {
                 line += std::string(gap, ' ');
                 if (i < ratArt.size()) {
                     line += ratArt[i];
@@ -681,13 +716,8 @@ void renderFrame(float deltaTime) {
             frame += padLine(line) + "\n";
         }
         frame += padLine("     Riitta Rasimus") + "\n";
+        game.ratSystem.render(frame, ratArt, pieWidth, gap);
 
-        // Info message for rats only
-        if (totalRats > 0) {
-            int ratCol = pieWidth + gap + 10; 
-            std::string ratMsg = std::to_string(totalRats) + " rats are stealing your pies!";
-            frame += padLine(std::string(ratCol, ' ') + ratMsg) + "\n";
-        }
     } else {
         for (const auto& line : steamToShow) frame += padLine(line) + "\n";
         for (const auto& line : pieToShow) frame += padLine(line) + "\n";
@@ -930,43 +960,14 @@ int main() {
             // --- CAT SYSTEM: Calculate total cats ---
             totalCats = prestigeShop.milkPurchased + (prestigeShop.milkPurchased / 9);
 
-            // --- RAT SYSTEM with CATS and CATNIP ---
-            if (game.totalPies >= RAT_THRESHOLD) {
-                double progress = std::min((double)game.totalPies / 1000000.0, 1.0);
-                double exponent = 1.01 + 0.7 * pow(progress, 2);
-                totalRats = static_cast<int>(3 * pow((double)game.totalPies / RAT_THRESHOLD, exponent));
-                if (totalRats > RAT_MAX) totalRats = RAT_MAX;
+            // --- RAT SYSTEM ---
+            game.ratSystem.update(deltaTime, game.totalPies, game.piesPerSecond, totalCats, prestigeShop.catnipLevel);
 
-                // Cats eat rats before rats eat pies
-                int ratsEatenPerCat = 3 + int(3 * pow(1.5, prestigeShop.catnipLevel) / 100.0f);
-                int totalRatsEaten = totalCats * ratsEatenPerCat;
-                if (totalRatsEaten > totalRats) totalRatsEaten = totalRats;
-                totalRats -= totalRatsEaten;
-                if (totalRats < 0) totalRats = 0;
-                
-                int ratsBeingEaten = totalRatsEaten;  // Track how many rats cats are eating
-                float catsEfficiency = (totalCats > 0) ? (float)ratsEatenPerCat : 0.0f;  // Rats per cat
-                double endgameFactor = pow(progress, 3);
-                float singleRatEatRate = RAT_EAT_RATE + (0.005f + 0.025f * endgameFactor) * game.piesPerSecond;
-
-                int ratsEatingPerSecond = static_cast<int>(totalRats * singleRatEatRate);
-                int ratsEatingThisFrame = static_cast<int>(std::min(ratsEatingPerSecond * deltaTime, (float)game.totalPies));
-                game.totalPies -= ratsEatingThisFrame;
-                ratsEating = ratsEatingPerSecond;
-                ratsEatingSingle = singleRatEatRate;
-
-                if (!ratsWereVisible) {
-                    ratsJustAppeared = true;
-                    ratsWereVisible = true;
-                }
-            } else {
-                if (ratsWereVisible) {
-                    ratsJustDisappeared = true;
-                    ratsWereVisible = false;
-                }
-                totalRats = 0;
-                ratsEating = 0;
-                ratsEatingSingle = 0;
+            // Handle rat appearance/disappearance for screen clearing
+            static bool lastRatState = false;
+            if (game.ratSystem.areRatsVisible() != lastRatState) {
+                system("cls");
+                lastRatState = game.ratSystem.areRatsVisible();
             }
 
             // Animation
