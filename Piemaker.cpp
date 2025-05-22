@@ -517,7 +517,7 @@ class Upgrade : public ShopItem {
     float multiplier;
     Building* target;
     bool purchased = false;
-    Upgrade* prerequisite = nullptr; // <-- Add this line
+    Upgrade* prerequisite = nullptr;
 public:
     Upgrade(const std::string& n, int c, float m, Building* t, Upgrade* prereq = nullptr)
         : name(n), cost(c), multiplier(m), target(t), prerequisite(prereq) {}
@@ -532,12 +532,13 @@ public:
         }
     }
     std::string getDescription() const override {
-        return "Boosts " + target->getName() + " output by x" + std::to_string((int)multiplier) + (purchased ? " [OWNED]" : "");
+        // Remove [OWNED] text
+        return "Boosts " + target->getName() + " output by x" + std::to_string((int)multiplier);
     }
     bool isVisible(int pies) const override {
-        // Only visible if you have enough pies AND the prerequisite (if any) is purchased
+        // Only visible if not purchased, you have enough pies, and prerequisite (if any) is purchased
         bool prereqOk = !prerequisite || prerequisite->isPurchased();
-        return prereqOk && pies >= cost / 2;
+        return !purchased && prereqOk && pies >= cost / 2;
     }
     bool isPurchased() const { return purchased; }
 };
@@ -643,26 +644,33 @@ void renderFrame(float deltaTime) {
     }
 
     frame += padLine("[SPACE] Bake a pie!") + "\n\n";
-    frame += "\n";
 
     if (game.prestigeUnlocked) {
         int piesForDisplay = std::max(game.piesBakedThisRun, 1000);
-        frame += "\n" + padLine("[R] RESET for " + std::to_string(sqrt(piesForDisplay / 1000.0f)) + " prestige stars!") + "\n";
+        frame += padLine("[R] RESET for " + std::to_string(sqrt(piesForDisplay / 1000.0f)) + " prestige stars!") + "\n";
     }
-
-    frame += "\n";
 
     // Render shop items
     int buildingCount = 3; // Number of buildings at the start of shopItems
+    bool upgradesShown = false;
     for (int i = 0; i < shopItems.size(); ++i) {
-        // If the item is visible now, mark it as "was visible"
-        if (shopItems[i]->isVisible(game.totalPies)) {
-            shopItems[i]->setWasVisible();
+        // Buildings: always show if ever visible
+        if (i < buildingCount) {
+            if (shopItems[i]->isVisible(game.totalPies)) {
+                shopItems[i]->setWasVisible();
+            }
+            if (shopItems[i]->hasBeenVisible()) {
+                frame += padLine("[" + std::to_string(i + 1) + "] " + shopItems[i]->getName() +
+                    " (" + std::to_string(shopItems[i]->getCost()) + " pies) - " +
+                    shopItems[i]->getDescription()) + "\n";
+            }
         }
-        // Show if it has ever been visible
-        if (shopItems[i]->hasBeenVisible()) {
-            if (i == buildingCount) {
+        // Upgrades: only show if currently visible (not purchased, etc)
+        else if (shopItems[i]->isVisible(game.totalPies)) {
+            // Add a blank line before the first upgrade
+            if (!upgradesShown) {
                 frame += "\n";
+                upgradesShown = true;
             }
             frame += padLine("[" + std::to_string(i + 1) + "] " + shopItems[i]->getName() +
                 " (" + std::to_string(shopItems[i]->getCost()) + " pies) - " +
@@ -695,14 +703,12 @@ void renderFrame(float deltaTime) {
         // Draw combined ASCII art (pie | rat)
         for (int i = 0; i < maxLines; ++i) {
             std::string line;
-
             // Pie
             if (i < pieToShow.size()) {
                 line += pieToShow[i];
             } else {
                 line += std::string(pieWidth, ' ');
             }
-
             // Rat (column always reserved if rats exist)
             if (game.ratSystem.getTotalRats() > 0) {
                 line += std::string(gap, ' ');
@@ -712,11 +718,18 @@ void renderFrame(float deltaTime) {
                     line += std::string(ratWidth, ' ');
                 }
             }
-
             frame += padLine(line) + "\n";
         }
+
+        // Add this block to show the rats message under the rat art
+        if (game.ratSystem.getTotalRats() > 0) {
+            int ratCol = pieToShow.empty() ? 0 : pieToShow[0].size();
+            ratCol += gap;
+            std::string ratMsg = std::to_string(game.ratSystem.getTotalRats()) + " rats are stealing your pies!";
+            frame += padLine(std::string(ratCol, ' ') + ratMsg) + "\n";
+        }
+
         frame += padLine("     Riitta Rasimus") + "\n";
-        game.ratSystem.render(frame, ratArt, pieWidth, gap);
 
     } else {
         for (const auto& line : steamToShow) frame += padLine(line) + "\n";
