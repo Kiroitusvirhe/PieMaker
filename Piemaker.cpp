@@ -506,7 +506,7 @@ public:
     int getPiesPerSecond() const override {
         return int(piesPerSecond * count * multiplier * (100 + prestigeShop.boostPercent) / 100.0f);
     }
-    void setMultiplier(float m) { multiplier = m; } // <-- Add this method
+    void multiplyMultiplier(float m) { multiplier *= m; } // <-- Change/add this method
     bool isVisible(int pies) const override { return visible || pies >= baseCost; }
     void setVisible(bool v) { visible = v; }
 };
@@ -527,7 +527,7 @@ public:
     bool canPurchase(int pies) const override { return !purchased && pies >= cost; }
     void purchase() override {
         if (!purchased && target) {
-            target->setMultiplier(multiplier);
+            target->multiplyMultiplier(multiplier); // <-- Multiply instead of set
             purchased = true;
         }
     }
@@ -647,34 +647,38 @@ void renderFrame(float deltaTime) {
 
     if (game.prestigeUnlocked) {
         int piesForDisplay = std::max(game.piesBakedThisRun, 1000);
-        frame += padLine("[R] RESET for " + std::to_string(sqrt(piesForDisplay / 1000.0f)) + " prestige stars!") + "\n";
+        frame += padLine("[R] RESET for " + std::to_string(sqrt(piesForDisplay / 1000.0f)) + " prestige stars!") + "\n\n";
     }
 
     // Render shop items
     int buildingCount = 3; // Number of buildings at the start of shopItems
     bool upgradesShown = false;
     for (int i = 0; i < shopItems.size(); ++i) {
-        // Buildings: always show if ever visible
+        // Mark as visible if currently visible
+        if (shopItems[i]->isVisible(game.totalPies)) {
+            shopItems[i]->setWasVisible();
+        }
+        // Add a blank line before the first upgrade
+        if (i == buildingCount && !upgradesShown) {
+            frame += "\n";
+            upgradesShown = true;
+        }
+        // Buildings: show if ever visible
         if (i < buildingCount) {
-            if (shopItems[i]->isVisible(game.totalPies)) {
-                shopItems[i]->setWasVisible();
-            }
             if (shopItems[i]->hasBeenVisible()) {
                 frame += padLine("[" + std::to_string(i + 1) + "] " + shopItems[i]->getName() +
                     " (" + std::to_string(shopItems[i]->getCost()) + " pies) - " +
                     shopItems[i]->getDescription()) + "\n";
             }
         }
-        // Upgrades: only show if currently visible (not purchased, etc)
-        else if (shopItems[i]->isVisible(game.totalPies)) {
-            // Add a blank line before the first upgrade
-            if (!upgradesShown) {
-                frame += "\n";
-                upgradesShown = true;
+        // Upgrades: show only if not purchased and has been visible
+        else {
+            Upgrade* upg = dynamic_cast<Upgrade*>(shopItems[i].get());
+            if (upg && !upg->isPurchased() && shopItems[i]->hasBeenVisible()) {
+                frame += padLine("[" + std::to_string(i + 1) + "] " + shopItems[i]->getName() +
+                    " (" + std::to_string(shopItems[i]->getCost()) + " pies) - " +
+                    shopItems[i]->getDescription()) + "\n";
             }
-            frame += padLine("[" + std::to_string(i + 1) + "] " + shopItems[i]->getName() +
-                " (" + std::to_string(shopItems[i]->getCost()) + " pies) - " +
-                shopItems[i]->getDescription()) + "\n";
         }
     }
 
@@ -725,7 +729,7 @@ void renderFrame(float deltaTime) {
         if (game.ratSystem.getTotalRats() > 0) {
             int ratCol = pieToShow.empty() ? 0 : pieToShow[0].size();
             ratCol += gap;
-            std::string ratMsg = std::to_string(game.ratSystem.getTotalRats()) + " rats are stealing your pies!";
+            std::string ratMsg = std::string(12, ' ') + std::to_string(game.ratSystem.getTotalRats()) + " rats are stealing your pies!";
             frame += padLine(std::string(ratCol, ' ') + ratMsg) + "\n";
         }
 
@@ -817,12 +821,12 @@ int main() {
                 intro.announcementStep = 1;
             }
             if (intro.spacePresses >= 20 && intro.announcementStep < 2) {
-                intro.announcement = "Only 9,999,980 more to go!";
+                intro.announcement = "Isn't this so much fun?";
                 intro.announcementTimer = INTRO_ANNOUNCEMENT_DURATION;
                 intro.announcementStep = 2;
             }
             if (intro.spacePresses >= 30 && intro.announcementStep < 3) {
-                intro.announcement = "Isn't this so much fun?";
+                intro.announcement = "Only 9,999,980 more to go!";
                 intro.announcementTimer = INTRO_ANNOUNCEMENT_DURATION;
                 intro.announcementStep = 3;
             }
