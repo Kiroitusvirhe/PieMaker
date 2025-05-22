@@ -50,7 +50,6 @@ Announcement announcement;
 
 struct IntroState {
     bool inIntro = true;
-    int pies = 1;
     int spacePresses = 0;
     int announcementStep = 0;
     std::string announcement = "";
@@ -104,7 +103,7 @@ struct PrestigeShop {
                 [this]() { return 1 + (catnipLevel * 1); },
                 [this]() { catnipLevel++; },
                 [this]() { return true; },
-                [this]() { return "Increases cat hungriness by 1% per level (Level: " + std::to_string(catnipLevel) + ")"; }
+                [this]() { return "Increases cat hungriness (Level: " + std::to_string(catnipLevel) + ")"; }
             },
             {
                 "Golden Sword",
@@ -284,8 +283,7 @@ void renderIntro() {
         SetConsoleTextAttribute(hConsole, 14); // Yellow
         std::cout << padLine(intro.announcement) << std::endl;
         SetConsoleTextAttribute(hConsole, 7);  // Reset to default
-    }
-    else {
+    } else {
         std::cout << std::endl;
     }
     std::cout << std::flush;
@@ -418,6 +416,8 @@ std::string formatWithCommas(int value) {
 // GAME CLASSES
 // ========================
 class ShopItem {
+protected:
+    bool wasVisible = false; // <-- Add this line
 public:
     virtual ~ShopItem() = default;
     virtual std::string getName() const = 0;
@@ -427,6 +427,10 @@ public:
     virtual std::string getDescription() const = 0;
     virtual bool isVisible(int pies) const { return true; }
     virtual int getPiesPerSecond() const { return 0; }
+
+    // Add this method
+    bool hasBeenVisible() const { return wasVisible; }
+    void setWasVisible() { wasVisible = true; }
 };
 
 class Building : public ShopItem {
@@ -445,7 +449,8 @@ public:
     bool canPurchase(int pies) const override { return pies >= getCost(); }
     void purchase() override { count++; }
     std::string getDescription() const override {
-        return name + " (Count: " + std::to_string(count) + ", +" + std::to_string(piesPerSecond) + " pies/sec)";
+        int actualPPS = getPiesPerSecond();
+        return name + " (Count: " + std::to_string(count) + ", +" + std::to_string(actualPPS) + " pies/sec)";
     }
     int getCount() const { return count; }
     // Apply prestige boost to all building production
@@ -457,30 +462,16 @@ public:
     void setVisible(bool v) { visible = v; }
 };
 
-class BuildingUpgrade : public Building {
-    std::string upgradeName;
-    int unlockThreshold;
-    bool unlocked;
-public:
-    BuildingUpgrade(const std::string& n, int cost, int pps, const std::string& upg, int threshold)
-        : Building(n, cost, pps, false), upgradeName(upg), unlockThreshold(threshold), unlocked(false) {}
-    bool isUnlocked(int pies) { return !unlocked && pies >= unlockThreshold; }
-    void unlock() { unlocked = true; }
-    std::string getDescription() const override {
-        return Building::getDescription() + (unlocked ? " [Upgrade: " + upgradeName + " unlocked!]" : "");
-    }
-    bool isVisible(int pies) const override { return pies >= unlockThreshold; }
-};
-
 class Upgrade : public ShopItem {
     std::string name;
     int cost;
     float multiplier;
     Building* target;
     bool purchased = false;
+    Upgrade* prerequisite = nullptr; // <-- Add this line
 public:
-    Upgrade(const std::string& n, int c, float m, Building* t)
-        : name(n), cost(c), multiplier(m), target(t) {}
+    Upgrade(const std::string& n, int c, float m, Building* t, Upgrade* prereq = nullptr)
+        : name(n), cost(c), multiplier(m), target(t), prerequisite(prereq) {}
 
     std::string getName() const override { return name; }
     int getCost() const override { return cost; }
@@ -494,7 +485,12 @@ public:
     std::string getDescription() const override {
         return "Boosts " + target->getName() + " output by x" + std::to_string((int)multiplier) + (purchased ? " [OWNED]" : "");
     }
-    bool isVisible(int pies) const override { return pies >= cost / 2; }
+    bool isVisible(int pies) const override {
+        // Only visible if you have enough pies AND the prerequisite (if any) is purchased
+        bool prereqOk = !prerequisite || prerequisite->isPurchased();
+        return prereqOk && pies >= cost / 2;
+    }
+    bool isPurchased() const { return purchased; }
 };
 
 std::vector<std::unique_ptr<ShopItem>> shopItems;
@@ -517,7 +513,6 @@ void initializeShopItems() {
     auto bakery = std::make_unique<Building>("Bakery", 50, 5);
     auto factory = std::make_unique<Building>("Factory", 200, 20);
 
-    // Keep raw pointers for upgrades
     Building* grandmaPtr = grandma.get();
     Building* bakeryPtr = bakery.get();
     Building* factoryPtr = factory.get();
@@ -527,10 +522,19 @@ void initializeShopItems() {
     shopItems.push_back(std::move(bakery));
     shopItems.push_back(std::move(factory));
 
-    // Add upgrades to shop
-    shopItems.push_back(std::make_unique<Upgrade>("Grandma's Secret Recipe", 500, 5.0f, grandmaPtr));
-    shopItems.push_back(std::make_unique<Upgrade>("Bakery Automation", 2000, 3.0f, bakeryPtr));
-    shopItems.push_back(std::make_unique<Upgrade>("Turbo Conveyor", 10000, 2.0f, factoryPtr));
+    // First round of upgrades
+    auto grandmaUpgrade1 = new Upgrade("Grandma's Secret Recipe", 500, 5.0f, grandmaPtr);
+    auto bakeryUpgrade1 = new Upgrade("Bakery Automation", 2000, 3.0f, bakeryPtr);
+    auto factoryUpgrade1 = new Upgrade("Turbo Conveyor", 10000, 2.0f, factoryPtr);
+
+    shopItems.push_back(std::unique_ptr<Upgrade>(grandmaUpgrade1));
+    shopItems.push_back(std::unique_ptr<Upgrade>(bakeryUpgrade1));
+    shopItems.push_back(std::unique_ptr<Upgrade>(factoryUpgrade1));
+
+    // Second round of upgrades, with prerequisites
+    shopItems.push_back(std::make_unique<Upgrade>("Grandma's Robot Arms", 5000, 3.0f, grandmaPtr, grandmaUpgrade1));
+    shopItems.push_back(std::make_unique<Upgrade>("Bakery Franchise", 15000, 2.5f, bakeryPtr, bakeryUpgrade1));
+    shopItems.push_back(std::make_unique<Upgrade>("Factory AI Overlord", 50000, 2.0f, factoryPtr, factoryUpgrade1));
 }
 
 
@@ -614,8 +618,17 @@ void renderFrame(float deltaTime) {
     frame += "\n";
 
      // Render shop items
+    int buildingCount = 3; // Number of buildings at the start of shopItems
     for (int i = 0; i < shopItems.size(); ++i) {
+        // If the item is visible now, mark it as "was visible"
         if (shopItems[i]->isVisible(game.totalPies)) {
+            shopItems[i]->setWasVisible();
+        }
+        // Show if it has ever been visible
+        if (shopItems[i]->hasBeenVisible()) {
+            if (i == buildingCount) {
+                frame += "\n";
+            }
             frame += padLine("[" + std::to_string(i + 1) + "] " + shopItems[i]->getName() +
                 " (" + std::to_string(shopItems[i]->getCost()) + " pies) - " +
                 shopItems[i]->getDescription()) + "\n";
@@ -690,7 +703,6 @@ void renderFrame(float deltaTime) {
         SetConsoleTextAttribute(hConsole, 7);
     }
     std::cout << std::flush;
-    setCursorPos(0, 0);
 }
 
 // ========================
@@ -755,13 +767,6 @@ int main() {
         // Update pies per second
         game.piesPerSecond = calculatePiesPerSecond();
 
-        // Unlock upgrades if available
-        for (auto& item : shopItems) {
-            if (auto* upg = dynamic_cast<BuildingUpgrade*>(item.get())) {
-                if (upg->isUnlocked(game.totalPies)) upg->unlock();
-            }
-        }
-
             // Announcements at milestones
             if (intro.spacePresses >= 10 && intro.announcementStep < 1) {
                 intro.announcement = "You've boke 10 already!";
@@ -774,7 +779,7 @@ int main() {
                 intro.announcementStep = 2;
             }
             if (intro.spacePresses >= 30 && intro.announcementStep < 3) {
-                intro.announcement = "Isn't this fun?";
+                intro.announcement = "Isn't this so much fun?";
                 intro.announcementTimer = INTRO_ANNOUNCEMENT_DURATION;
                 intro.announcementStep = 3;
             }
@@ -796,6 +801,7 @@ int main() {
                 game.totalPies -= 50;
                 intro.buildingsUnlocked = true;
                 intro.inIntro = false;
+                game.forceClearScreen = true; // <--- Add this!
                 system("cls");
             }
 
@@ -860,6 +866,7 @@ int main() {
             if (game.piesBakedThisRun >= 1000 && keyPressed('R')) {
                 game.prestigeStars += sqrt(game.piesBakedThisRun / 1000.0f);
                 resetGameState();
+                initializeShopItems();
                 inPrestigeShop = true;
                 system("cls");
 
@@ -889,7 +896,7 @@ int main() {
                 }
             }
 
-            // Timing
+            // Timer
             auto now = std::chrono::steady_clock::now();
             float deltaTime = std::chrono::duration<float>(now - lastTimeGame).count();
             lastTimeGame = now;
