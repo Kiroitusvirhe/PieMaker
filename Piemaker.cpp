@@ -12,7 +12,7 @@
 #include <ctime>
 #include <memory>
 
-
+namespace piegame {
 
 class RatSystem {
 private:
@@ -87,6 +87,13 @@ struct GameState {
     bool forceClearScreen = false;
     RatSystem ratSystem;
 };
+
+std::ostream& operator<<(std::ostream& os, const GameState& gs) {
+    os << "Pies: " << gs.totalPies
+       << "\nPrestige: " << gs.prestigeStars
+       << "\nRats: " << gs.ratSystem.getTotalRats();
+    return os;
+}
 
 GameState game;
 
@@ -491,8 +498,24 @@ protected:
     bool visible;
     float multiplier = 1.0f;
 public:
+    // Main constructor
     Building(const std::string& n, int cost, int pps, bool vis = false)
         : name(n), baseCost(cost), count(0), piesPerSecond(pps), visible(vis) {}
+
+    // Overloaded constructor: only name and cost, default pps and visible
+    Building(const std::string& n, int cost)
+        : name(n), baseCost(cost), count(0), piesPerSecond(1), visible(false) {}
+
+    // Overloaded constructor: only name, default cost, pps, visible
+    Building(const std::string& n)
+        : name(n), baseCost(10), count(0), piesPerSecond(1), visible(false) {}
+
+    // Custom destructor for demonstration
+    ~Building() override {
+        // Uncomment the next line if you want to see when a Building is destroyed
+        // std::cout << "Building '" << name << "' destroyed.\n";
+    }
+
     std::string getName() const override { return name; }
     int getCost() const override { return baseCost + count * baseCost / 2; }
     bool canPurchase(int pies) const override { return pies >= getCost(); }
@@ -502,11 +525,10 @@ public:
         return name + " (Count: " + std::to_string(count) + ", +" + std::to_string(actualPPS) + " pies/sec)";
     }
     int getCount() const { return count; }
-    // Apply prestige boost to all building production
     int getPiesPerSecond() const override {
         return int(piesPerSecond * count * multiplier * (100 + prestigeShop.boostPercent) / 100.0f);
     }
-    void multiplyMultiplier(float m) { multiplier *= m; } // <-- Change/add this method
+    void multiplyMultiplier(float m) { multiplier *= m; }
     bool isVisible(int pies) const override { return visible || pies >= baseCost; }
     void setVisible(bool v) { visible = v; }
 };
@@ -752,10 +774,14 @@ void renderFrame(float deltaTime) {
     std::cout << std::flush;
 }
 
+}
+
 // ========================
 // MAIN GAME LOOP
 // ========================
 int main() {
+    using namespace piegame;
+
     hideCursor();
     srand(static_cast<unsigned int>(time(nullptr)));
     initializePrestigeShop();
