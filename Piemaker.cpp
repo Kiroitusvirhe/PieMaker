@@ -1,44 +1,74 @@
-#include <iostream>
-#include <windows.h>
-#include <cmath>
-#include <chrono>
-#include <vector>
-#include <string>
-#include <functional>
-#include <conio.h>
-#include <sstream>
-#include <locale>
-#include <cstdlib>
-#include <ctime>
-#include <memory>
+#include <iostream>      // For input/output streams
+#include <windows.h>     // For Windows-specific console manipulation
+#include <cmath>         // For math functions like pow, sqrt
+#include <chrono>        // For timing and frame rate control
+#include <vector>        // For dynamic arrays (STL vector)
+#include <string>        // For string manipulation
+#include <functional>    // For std::function (used in upgrades)
+#include <conio.h>       // For _getch() and _kbhit() (keyboard input)
+#include <sstream>       // For string streams
+#include <locale>        // For locale-specific formatting (not heavily used)
+#include <cstdlib>       // For system(), srand(), rand()
+#include <ctime>         // For time()
+#include <memory>        // For smart pointers (unique_ptr)
 
+// All game logic, variables, and functions are wrapped in the piegame namespace for organization
 namespace piegame {
 
+// ========================
+// CAT SYSTEM
+// ========================
+// Handles all logic and state related to cats and catnip
+struct CatSystem {
+    int milkPurchased = 0;   // Number of milk upgrades (affects cats)
+    int catnipLevel = 0;     // Catnip level (affects cats' rat-eating power)
+
+    // Calculate total cats based on milk upgrades
+    int getTotalCats() const {
+        return milkPurchased + (milkPurchased / 9);
+    }
+
+    // Calculate how many rats a single cat can eat per second
+    int ratsEatenPerCat() const {
+        return 3 + int(3 * pow(1.5, catnipLevel) / 100.0f);
+    }
+};
+
+CatSystem catSystem; // The global cat system
+
+// ========================
+// RAT SYSTEM
+// ========================
+// Handles the logic for rats that steal pies if you have too many pies
 class RatSystem {
 private:
-    int totalRats = 0;
-    int ratsEating = 0;
-    float ratsEatingSingle = 0.0f;
-    bool ratsWereVisible = false;
-    const int RAT_THRESHOLD = 50000;
-    const float RAT_EAT_RATE = 1.0f;
-    const int RAT_MAX = 999999;
+    int totalRats = 0;           // Number of rats currently present
+    int ratsEating = 0;          // Number of rats eating pies per second
+    float ratsEatingSingle = 0.0f; // How many pies a single rat eats per second
+    bool ratsWereVisible = false; // Used to track if rats were visible last frame
+    const int RAT_THRESHOLD = 50000; // Minimum pies before rats appear
+    const float RAT_EAT_RATE = 1.0f; // Base rate at which rats eat pies
+    const int RAT_MAX = 999999;      // Maximum number of rats
 
 public:
-    void update(float deltaTime, int& totalPies, int piesPerSecond, int totalCats, int catnipLevel) {
+    // Updates the rat system each frame
+    void update(float deltaTime, int& totalPies, int piesPerSecond) {
         if (totalPies >= RAT_THRESHOLD) {
+            // Calculate how many rats should appear based on total pies
             double progress = std::min((double)totalPies / 1000000.0, 1.0);
             double exponent = 1.01 + 0.7 * pow(progress, 2);
             totalRats = static_cast<int>(3 * pow((double)totalPies / RAT_THRESHOLD, exponent));
             if (totalRats > RAT_MAX) totalRats = RAT_MAX;
 
             // Cats eat rats before rats eat pies
-            int ratsEatenPerCat = 3 + int(3 * pow(1.5, catnipLevel) / 100.0f);
+            int totalCats = catSystem.getTotalCats();
+            int ratsEatenPerCat = catSystem.ratsEatenPerCat();
             int totalRatsEaten = totalCats * ratsEatenPerCat;
             if (totalRatsEaten > totalRats) totalRatsEaten = totalRats;
             totalRats -= totalRatsEaten;
             if (totalRats < 0) totalRats = 0;
 
+            // Rats eat pies
             float singleRatEatRate = RAT_EAT_RATE + (0.005f + 0.025f * pow(progress, 3)) * piesPerSecond;
             int ratsEatingPerSecond = static_cast<int>(totalRats * singleRatEatRate);
             int ratsEatingThisFrame = static_cast<int>(std::min(ratsEatingPerSecond * deltaTime, (float)totalPies));
@@ -46,12 +76,14 @@ public:
             ratsEating = ratsEatingPerSecond;
             ratsEatingSingle = singleRatEatRate;
         } else {
+            // No rats if under threshold
             totalRats = 0;
             ratsEating = 0;
             ratsEatingSingle = 0;
         }
     }
 
+    // Renders rat ASCII art and rat info to the frame string
     void render(std::string& frame, const std::vector<std::string>& ratArt, int pieWidth, int gap) const {
         if (totalRats > 0) {
             for (const auto& line : ratArt) {
@@ -63,6 +95,7 @@ public:
         }
     }
 
+    // Getters for rat stats
     int getTotalRats() const { return totalRats; }
     int getRatsEating() const { return ratsEating; }
     float getRatsEatingSingle() const { return ratsEatingSingle; }
@@ -71,23 +104,24 @@ public:
     void setRatsWereVisible(bool v) { ratsWereVisible = v; }
 };
 
-
 // ========================
 // GAME STATE VARIABLES
 // ========================
+// Holds all persistent game state for the current run
 struct GameState {
-    int totalPies = 0;
-    int piesPerSecond = 0;
-    float prestigeStars = 0;
-    float pendingPies = 0.0f;
-    bool goalAchieved = false;
-    bool prestigeUnlocked = false;
-    int piesBakedThisRun = 0;
-    bool prestigeHintShown = false;
-    bool forceClearScreen = false;
-    RatSystem ratSystem;
+    int totalPies = 0;           // Total pies baked
+    int piesPerSecond = 0;       // Current pies per second
+    float prestigeStars = 0;     // Prestige currency
+    float pendingPies = 0.0f;    // For fractional pie accumulation
+    bool goalAchieved = false;   // Has the player reached the win condition?
+    bool prestigeUnlocked = false; // Has prestige been unlocked?
+    int piesBakedThisRun = 0;    // Pies baked in this run (for prestige)
+    bool prestigeHintShown = false; // Has the prestige hint been shown?
+    bool forceClearScreen = false;  // Should the screen be cleared next frame?
+    RatSystem ratSystem;         // The rat system for this game
 };
 
+// Overload << to print GameState for debugging
 std::ostream& operator<<(std::ostream& os, const GameState& gs) {
     os << "Pies: " << gs.totalPies
        << "\nPrestige: " << gs.prestigeStars
@@ -95,57 +129,72 @@ std::ostream& operator<<(std::ostream& os, const GameState& gs) {
     return os;
 }
 
-GameState game;
+GameState game; // The main game state object
 
+// ========================
+// ANNOUNCEMENT SYSTEM
+// ========================
+// Used to display temporary messages to the player
 struct Announcement {
-    std::string text;
-    float timer = 0.0f;
+    std::string text;   // The message text
+    float timer = 0.0f; // How long the message should be shown
 
+    // Show a new announcement for a given duration
     void show(const std::string& msg, float duration = 5.0f) {
         text = msg;
         timer = duration;
     }
+    // Update the timer each frame
     void update(float dt) {
         if (timer > 0.0f) {
             timer -= dt;
             if (timer <= 0.0f) text = "";
         }
     }
+    // Is an announcement currently active?
     bool active() const { return !text.empty(); }
 };
 
-Announcement announcement;
+Announcement announcement; // The global announcement object
 
+// ========================
+// INTRO STATE
+// ========================
+// Tracks the state of the intro/tutorial sequence
 struct IntroState {
-    bool inIntro = true;
-    int spacePresses = 0;
-    int announcementStep = 0;
-    std::string announcement = "";
-    float announcementTimer = 0.0f;
-    bool unlockAvailable = false;
-    bool buildingsUnlocked = false;
-    bool clearedAfterFirstSpace = false;
+    bool inIntro = true;             // Are we in the intro?
+    int spacePresses = 0;            // How many times space has been pressed
+    int announcementStep = 0;        // Which milestone announcement we're on
+    std::string announcement = "";   // Current intro announcement
+    float announcementTimer = 0.0f;  // Timer for intro announcement
+    bool unlockAvailable = false;    // Can the player unlock buildings?
+    bool buildingsUnlocked = false;  // Has the player unlocked buildings?
+    bool clearedAfterFirstSpace = false; // Has the screen been cleared after first space?
 };
 
-IntroState intro;
-const float INTRO_ANNOUNCEMENT_DURATION = 5.0f;
+IntroState intro; // The global intro state
+const float INTRO_ANNOUNCEMENT_DURATION = 5.0f; // How long intro messages last
 
+// ========================
+// PRESTIGE SHOP SYSTEM
+// ========================
+// Represents a single prestige upgrade
 struct PrestigeUpgrade {
     std::string name;
-    std::function<int()> getCost;
-    std::function<void()> effect;
-    std::function<bool()> isVisible;
-    std::function<std::string()> getDescription;
+    std::function<int()> getCost;           // Function to get cost
+    std::function<void()> effect;           // Function to apply effect
+    std::function<bool()> isVisible;        // Function to check visibility
+    std::function<std::string()> getDescription; // Function to get description
 };
 
+// The prestige shop, holding all upgrades and their state
 struct PrestigeShop {
-    int boostPercent = 0;
-    int milkPurchased = 0;
-    int catnipLevel = 0;
-    bool hasGoldenSword = false;
-    bool inShop = false;
-    std::vector<PrestigeUpgrade> upgrades;
+    int boostPercent = 0;       // % boost to all production
+    bool hasGoldenSword = false;// Cosmetic upgrade
+    bool inShop = false;        // Is the player in the shop?
+    std::vector<PrestigeUpgrade> upgrades; // All available upgrades
 
+    // Initialize all prestige upgrades
     void initialize() {
         upgrades = {
             {
@@ -157,21 +206,21 @@ struct PrestigeShop {
             },
             {
                 "Milk",
-                [this]() { return 10 + (milkPurchased * 2); },
-                [this]() { milkPurchased++; },
-                [this]() { return true; },
-                [this]() {
-                    int cats = milkPurchased + (milkPurchased / 9);
-                    return "Attracts cats to reduce rats (Owned: " + std::to_string(milkPurchased) +
+                []() { return 10 + (catSystem.milkPurchased * 2); },
+                []() { catSystem.milkPurchased++; },
+                []() { return true; },
+                []() {
+                    int cats = catSystem.getTotalCats();
+                    return "Attracts cats to reduce rats (Owned: " + std::to_string(catSystem.milkPurchased) +
                            ", Cats: " + std::to_string(cats) + ")";
                 }
             },
             {
                 "Catnip",
-                [this]() { return 1 + (catnipLevel * 1); },
-                [this]() { catnipLevel++; },
-                [this]() { return true; },
-                [this]() { return "Increases cat hungriness (Level: " + std::to_string(catnipLevel) + ")"; }
+                []() { return 1 + (catSystem.catnipLevel * 1); },
+                []() { catSystem.catnipLevel++; },
+                []() { return true; },
+                []() { return "Increases cat hungriness (Level: " + std::to_string(catSystem.catnipLevel) + ")"; }
             },
             {
                 "Golden Sword",
@@ -183,18 +232,19 @@ struct PrestigeShop {
         };
     }
 };
-PrestigeShop prestigeShop;
+PrestigeShop prestigeShop; // The global prestige shop
 
-bool inPrestigeShop = false;
+bool inPrestigeShop = false; // Is the player currently in the prestige shop?
 
 // ========================
-// CAT SYSTEM VARIABLES
+// REMOVE OLD CAT VARIABLES
 // ========================
-int totalCats = 0;
+// int totalCats = 0; // <-- REMOVE THIS LINE
 
 // ========================
 // ASCII ART
 // ========================
+// Various ASCII art assets for the game
 std::vector<std::string> pieSteam1 = {
     "             (",
     "              )"
@@ -256,10 +306,10 @@ std::vector<std::vector<std::string>> fireworksFrames = {
     }
 };
 
-bool showPressedPie = false;
-int pieAnimTimer = 0;
-int idleFrame = 0;
-float idleTimer = 0.0f;
+bool showPressedPie = false; // Should the pressed pie art be shown?
+int pieAnimTimer = 0;        // Timer for pie press animation
+int idleFrame = 0;           // Which idle frame to show
+float idleTimer = 0.0f;      // Timer for idle animation
 
 std::vector<std::string> ratArt = {
     "                        .--.",
@@ -271,6 +321,7 @@ std::vector<std::string> ratArt = {
 // ========================
 // CONSOLE HELPERS
 // ========================
+// Hide the blinking cursor in the console
 void hideCursor() {
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_CURSOR_INFO cursorInfo;
@@ -279,6 +330,7 @@ void hideCursor() {
     SetConsoleCursorInfo(hConsole, &cursorInfo);
 }
 
+// Set the cursor position in the console (for overwriting output)
 void setCursorPos(int x, int y) {
     COORD coord = { (short)x, (short)y };
     SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
@@ -287,6 +339,7 @@ void setCursorPos(int x, int y) {
 // ========================
 // INPUT HANDLING
 // ========================
+// Returns true if the given key was just pressed (not held)
 bool keyPressed(int key) {
     static bool keyStates[256] = { false };
     bool currentState = (GetAsyncKeyState(key) & 0x8000);
@@ -303,6 +356,7 @@ bool keyPressed(int key) {
 // ========================
 // PRESTIGE SHOP FUNCTIONS
 // ========================
+// Initializes the prestige shop upgrades
 void initializePrestigeShop() {
     prestigeShop.initialize();
 }
@@ -310,8 +364,10 @@ void initializePrestigeShop() {
 // ========================
 // INTRO RENDER FUNCTION
 // ========================
+// Renders the intro/tutorial screen
 void renderIntro() {
     const int CONSOLE_WIDTH = 80;
+    // Helper lambda to pad lines to fixed width
     auto padLine = [&](const std::string& s) -> std::string {
         if (s.length() < CONSOLE_WIDTH)
             return s + std::string(CONSOLE_WIDTH - s.length(), ' ');
@@ -347,6 +403,7 @@ void renderIntro() {
 // ========================
 // PRESTIGE SHOP RENDER
 // ========================
+// Renders the prestige shop screen
 void renderPrestigeShop() {
     const int CONSOLE_WIDTH = 80;
     std::string frame;
@@ -378,6 +435,7 @@ void renderPrestigeShop() {
 // ========================
 // PRESTIGE RESET
 // ========================
+// Resets the game state for a new run (after prestige or win)
 void resetGameState() {
     game.totalPies = 0;
     game.piesPerSecond = 0;
@@ -389,6 +447,7 @@ void resetGameState() {
 // ========================
 // CELEBRATION + PROMPT
 // ========================
+// Shows the celebration screen and asks if the player wants to play again
 void showCelebration() {
     system("cls");
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -457,6 +516,7 @@ void showCelebration() {
 // ========================
 // HELPER FUNCTIONS
 // ========================
+// Formats an integer with commas (e.g., 1000000 -> 1,000,000)
 std::string formatWithCommas(int value) {
     std::string num = std::to_string(value);
     int insertPosition = num.length() - 3;
@@ -471,9 +531,10 @@ std::string formatWithCommas(int value) {
 // GAME CLASSES
 // ========================
 
+// Abstract base class for all shop items (buildings and upgrades)
 class ShopItem {
 protected:
-    bool wasVisible = false; // <-- Add this line
+    bool wasVisible = false; // Tracks if the item has ever been visible
 public:
     virtual ~ShopItem() = default;
     virtual std::string getName() const = 0;
@@ -484,11 +545,12 @@ public:
     virtual bool isVisible(int pies) const { return true; }
     virtual int getPiesPerSecond() const { return 0; }
 
-    // Add this method
+    // Tracks if the item has ever been visible (for display logic)
     bool hasBeenVisible() const { return wasVisible; }
     void setWasVisible() { wasVisible = true; }
 };
 
+// Represents a building that produces pies per second
 class Building : public ShopItem {
 protected:
     std::string name;
@@ -510,9 +572,8 @@ public:
     Building(const std::string& n)
         : name(n), baseCost(10), count(0), piesPerSecond(1), visible(false) {}
 
-    // Custom destructor for demonstration
+    // Custom destructor for demonstration (can print debug info)
     ~Building() override {
-        // Uncomment the next line if you want to see when a Building is destroyed
         // std::cout << "Building '" << name << "' destroyed.\n";
     }
 
@@ -533,6 +594,7 @@ public:
     void setVisible(bool v) { visible = v; }
 };
 
+// Represents an upgrade that boosts a building's output
 class Upgrade : public ShopItem {
     std::string name;
     int cost;
@@ -549,12 +611,11 @@ public:
     bool canPurchase(int pies) const override { return !purchased && pies >= cost; }
     void purchase() override {
         if (!purchased && target) {
-            target->multiplyMultiplier(multiplier); // <-- Multiply instead of set
+            target->multiplyMultiplier(multiplier); // Multiply output
             purchased = true;
         }
     }
     std::string getDescription() const override {
-        // Remove [OWNED] text
         return "Boosts " + target->getName() + " output by x" + std::to_string((int)multiplier);
     }
     bool isVisible(int pies) const override {
@@ -565,8 +626,10 @@ public:
     bool isPurchased() const { return purchased; }
 };
 
+// All shop items (buildings and upgrades) are stored here
 std::vector<std::unique_ptr<ShopItem>> shopItems;
 
+// Calculates the total pies per second from all buildings
 int calculatePiesPerSecond() {
     int total = 0;
     for (const auto& item : shopItems) {
@@ -577,6 +640,7 @@ int calculatePiesPerSecond() {
     return total;
 }
 
+// Initializes all shop items (buildings and upgrades)
 void initializeShopItems() {
     shopItems.clear();
 
@@ -609,15 +673,13 @@ void initializeShopItems() {
     shopItems.push_back(std::make_unique<Upgrade>("Factory AI Overlord", 50000, 2.0f, factoryPtr, factoryUpgrade1));
 }
 
-
 // ========================
 // RENDER FRAME
 // ========================
+// Renders the main game screen each frame
 void renderFrame(float deltaTime) {
     const int CONSOLE_WIDTH = 80;
     std::string frame;
-
-    // ...existing clear screen logic...
 
     // Helper lambda to pad lines to fixed width
     auto padLine = [&](const std::string& s) -> std::string {
@@ -645,14 +707,14 @@ void renderFrame(float deltaTime) {
     if (prestigeShop.boostPercent > 0) {
         frame += padLine("Boost: " + std::to_string(prestigeShop.boostPercent) + "%") + "\n";
     }
-    if (prestigeShop.milkPurchased > 0) {
-        frame += padLine("Milk: " + std::to_string(prestigeShop.milkPurchased)) + "\n";
+    if (catSystem.milkPurchased > 0) {
+        frame += padLine("Milk: " + std::to_string(catSystem.milkPurchased)) + "\n";
     }
-    if (totalCats > 0 || prestigeShop.milkPurchased > 0) {
-        frame += padLine("Cats: " + std::to_string(totalCats)) + "\n";
+    if (catSystem.getTotalCats() > 0 || catSystem.milkPurchased > 0) {
+        frame += padLine("Cats: " + std::to_string(catSystem.getTotalCats())) + "\n";
     }
-    if (prestigeShop.catnipLevel > 0) {
-        frame += padLine("Catnip: " + std::to_string(prestigeShop.catnipLevel)) + "\n";
+    if (catSystem.catnipLevel > 0) {
+        frame += padLine("Catnip: " + std::to_string(catSystem.catnipLevel)) + "\n";
     }
     if (prestigeShop.hasGoldenSword) {
         frame += padLine("Golden Sword: OWNED") + "\n";
@@ -710,7 +772,7 @@ void renderFrame(float deltaTime) {
     std::vector<std::string> pieToShow = showPressedPie ? piePressed : pieIdle1;
 
     // Draw steam, then pie, then artist tag
-    if (game.ratSystem.getTotalRats() > 0 || totalCats > 0) {
+    if (game.ratSystem.getTotalRats() > 0 || catSystem.getTotalCats() > 0) {
         size_t steamLines = steamToShow.size();
         size_t pieLines = pieToShow.size();
         size_t ratLines = ratArt.size();
@@ -774,13 +836,14 @@ void renderFrame(float deltaTime) {
     std::cout << std::flush;
 }
 
-}
+} // End of namespace piegame
 
 // ========================
 // MAIN GAME LOOP
 // ========================
+// The main function runs the game loop and handles all user interaction
 int main() {
-    using namespace piegame;
+    using namespace piegame; // Use all game logic from the piegame namespace
 
     hideCursor();
     srand(static_cast<unsigned int>(time(nullptr)));
@@ -811,6 +874,7 @@ int main() {
 
         auto lastTime = std::chrono::steady_clock::now();
 
+        // Intro/tutorial loop
         while (intro.inIntro) {
             if (keyPressed(VK_SPACE)) {
                 if (!intro.clearedAfterFirstSpace) {
@@ -826,19 +890,19 @@ int main() {
                 pieAnimTimer = 5;
             }
 
-             // Handle shop item purchases
-        for (int i = 0; i < shopItems.size(); ++i) {
-            if (keyPressed('1' + i)) {
-                if (shopItems[i]->canPurchase(game.totalPies)) {
-                    game.totalPies -= shopItems[i]->getCost();
-                    shopItems[i]->purchase();
-                    announcement.show(shopItems[i]->getName() + " purchased!");
+            // Handle shop item purchases in intro
+            for (int i = 0; i < shopItems.size(); ++i) {
+                if (keyPressed('1' + i)) {
+                    if (shopItems[i]->canPurchase(game.totalPies)) {
+                        game.totalPies -= shopItems[i]->getCost();
+                        shopItems[i]->purchase();
+                        announcement.show(shopItems[i]->getName() + " purchased!");
+                    }
                 }
             }
-        }
 
-        // Update pies per second
-        game.piesPerSecond = calculatePiesPerSecond();
+            // Update pies per second
+            game.piesPerSecond = calculatePiesPerSecond();
 
             // Announcements at milestones
             if (intro.spacePresses >= 10 && intro.announcementStep < 1) {
@@ -874,7 +938,7 @@ int main() {
                 game.totalPies -= 50;
                 intro.buildingsUnlocked = true;
                 intro.inIntro = false;
-                game.forceClearScreen = true; // <--- Add this!
+                game.forceClearScreen = true;
                 system("cls");
             }
 
@@ -896,8 +960,9 @@ int main() {
 
         auto lastTimeGame = std::chrono::steady_clock::now();
 
+        // Main game loop
         do {
-            // Input
+            // Input: bake pies
             if (keyPressed(VK_SPACE)) {
                 game.totalPies += 1 + (1 * prestigeShop.boostPercent / 100);
                 game.piesBakedThisRun += 1 + (1 * prestigeShop.boostPercent / 100);
@@ -905,7 +970,7 @@ int main() {
                 pieAnimTimer = 5;
             }
 
-            // Secret buttons
+            // Secret buttons for testing
             if (keyPressed('X')) {
                 game.totalPies = 1000000;
                 game.piesBakedThisRun = 1000000;
@@ -915,18 +980,20 @@ int main() {
                 game.piesBakedThisRun += 50000;
             }
 
+            // Manual screen clear
             if (keyPressed('C')) {
                 system("cls");
             }
 
+            // Handle shop item purchases
             for (int i = 0; i < shopItems.size(); ++i) {
                 if (keyPressed('1' + i)) {
-                if (shopItems[i]->canPurchase(game.totalPies)) {
-                    game.totalPies -= shopItems[i]->getCost();
-                    shopItems[i]->purchase();
-                    announcement.show(shopItems[i]->getName() + " purchased!");
-                    game.piesPerSecond = calculatePiesPerSecond();
-                 }
+                    if (shopItems[i]->canPurchase(game.totalPies)) {
+                        game.totalPies -= shopItems[i]->getCost();
+                        shopItems[i]->purchase();
+                        announcement.show(shopItems[i]->getName() + " purchased!");
+                        game.piesPerSecond = calculatePiesPerSecond();
+                    }
                 }
             }
 
@@ -935,7 +1002,7 @@ int main() {
                 game.prestigeUnlocked = true;
             }
 
-            // Prestige
+            // Prestige logic
             if (game.piesBakedThisRun >= 1000 && keyPressed('R')) {
                 game.prestigeStars += sqrt(game.piesBakedThisRun / 1000.0f);
                 resetGameState();
@@ -943,6 +1010,7 @@ int main() {
                 inPrestigeShop = true;
                 system("cls");
 
+                // Prestige shop loop
                 while (inPrestigeShop) {
                     renderPrestigeShop();
 
@@ -969,14 +1037,12 @@ int main() {
                 }
             }
 
-            // Timer
+            // Timer for frame timing
             auto now = std::chrono::steady_clock::now();
             float deltaTime = std::chrono::duration<float>(now - lastTimeGame).count();
             lastTimeGame = now;
 
-         // announcement.update(deltaTime);
-
-            // Track previous announcement state
+            // Announcement update and screen clear logic
             static bool wasAnnouncementActive = false;
             bool isAnnouncementActive = announcement.active();
 
@@ -998,13 +1064,10 @@ int main() {
                 game.pendingPies -= piesToAdd;
             }
 
-            static bool ratsWereVisible = false;
-
-            // --- CAT SYSTEM: Calculate total cats ---
-            totalCats = prestigeShop.milkPurchased + (prestigeShop.milkPurchased / 9);
+            // --- CAT SYSTEM: No need to calculate totalCats, use catSystem.getTotalCats() everywhere ---
 
             // --- RAT SYSTEM ---
-            game.ratSystem.update(deltaTime, game.totalPies, game.piesPerSecond, totalCats, prestigeShop.catnipLevel);
+            game.ratSystem.update(deltaTime, game.totalPies, game.piesPerSecond);
 
             // Handle rat appearance/disappearance for screen clearing
             static bool lastRatState = false;
@@ -1013,13 +1076,14 @@ int main() {
                 lastRatState = game.ratSystem.areRatsVisible();
             }
 
-            // Animation
+            // Animation for pie press
             if (pieAnimTimer > 0) {
                 pieAnimTimer--;
             } else {
                 showPressedPie = false;
             }
 
+            // Idle animation
             idleTimer += deltaTime;
             if (idleTimer > 0.4f) {
                 idleFrame = 1 - idleFrame;
@@ -1032,6 +1096,7 @@ int main() {
                 game.prestigeHintShown = true;
             }
 
+            // Force clear screen if requested
             if (game.forceClearScreen) {
                 system("cls");
                 game.forceClearScreen = false;
@@ -1039,9 +1104,10 @@ int main() {
 
             renderFrame(deltaTime);
 
-            Sleep(33);
+            Sleep(33); // ~30 FPS
         } while (!game.goalAchieved && game.totalPies < 1000000);
 
+        // If the player wins, show celebration
         if (game.totalPies >= 1000000) {
             showCelebration();
         }
